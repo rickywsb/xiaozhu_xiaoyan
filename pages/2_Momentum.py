@@ -1,10 +1,289 @@
-"""pages/2_Momentum.py — 量能健康报告（Phase 3 开发中）"""
+"""pages/2_Momentum.py — 量能健康报告"""
 
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import config
+from core.daily_momentum import PERIODS, score_holdings, fetch_histories, calc_metrics, DEFAULT_DECAY, DEFAULT_WINDOW
+
+# ─── 工具 ─────────────────────────────────────────────────────────────────────
+
+@st.cache_data(show_spinner=False)
+def _load_portfolio() -> dict:
+    return json.loads(config.PORTFOLIO_PATH.read_text(encoding="utf-8"))
+
+
+@st.cache_data(show_spinner="⚡ 正在计算量能数据…（首次约 15 秒）", ttl=1800)
+def _cached_score(portfolio_hash: str, window: int, decay: float) -> pd.DataFrame:
+    """缓存 30 分钟；portfolio_hash 变化时自动失效。"""
+    portfolio = json.loads(config.PORTFOLIO_PATH.read_text(encoding="utf-8"))
+    return score_holdings(portfolio, window=window, decay=decay)
+
+
+def _portfolio_hash(portfolio: dict) -> str:
+    tickers = sorted(
+        pos["yf_ticker"]
+        for acc in portfolio.get("accounts", [])
+        for pos in acc.get("positions", [])
+    )
+    return "|".join(tickers)
+
+
+# ─── 颜色工具 ─────────────────────────────────────────────────────────────────
+_GREEN = "#26a641"
+_RED   = "#d73a4a"
+_GRAY  = "#8b949e"
+
+def _accel_color(v):
+    if pd.isna(v): return _GRAY
+    return _GREEN if v > 0 else _RED
+
+
+# ─── 页面 ─────────────────────────────────────────────────────────────────────
 st.title("📊 量能健康报告")
-st.info("🚧 **开发中 — Phase 3**\n\n此页面将展示：\n"
-        "- 当前持仓的多周期动量热力图（5d / 10d / 20d / 60d）\n"
-        "- 综合动量得分排名（横向柱状图 + 趋势箭头 ↑↓→）\n"
-        "- 个股详情卡片（价格走势 + 动量加速度曲线）\n"
-        "- 持仓预警：动量得分低于底部 20% 高亮警告")
+
+portfolio = _load_portfolio()
+
+# 侧边栏参数
+with st.sidebar:
+    st.subheader("⚙️ 参数")
+    decay  = st.slider("衰减因子 decay", 0.88, 0.99, DEFAULT_DECAY, 0.01,
+                       help="越大→近期权重越集中")
+    window = st.slider("回看窗口 window", 20, 60, DEFAULT_WINDOW, 5,
+                       help="计算衰减得分的交易日数")
+    st.caption("修改参数后点击「⚡ 刷新量能」重新计算。")
+
+# 顶栏
+col_title, col_btn = st.columns([5, 1])
+with col_btn:
+    refresh = st.button("⚡ 刷新量能", type="primary", use_container_width=True)
+
+if refresh:
+    st.cache_data.clear()
+    st.rerun()
+
+# 计算
+ph = _portfolio_hash(portfolio)
+with st.spinner("正在加载量能数据…"):
+    df = _cached_score(ph, window, decay)
+
+if df.empty:
+    st.warning("数据不足，请检查持仓 ticker 是否正确，或点击「⚡ 刷新量能」重试。")
+    st.stop()
+
+n_ok = len(df)
+n_total = sum(len(a["positions"]) for a in portfolio.get("accounts", []))
+st.caption(f"📅 基于缓存（30分钟内复用） | {n_ok}/{n_total} 只有效数据 | "
+           f"decay={decay}  window={window}")
+
+st.divider()
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ① 多周期收益热力图
+# ═══════════════════════════════════════════════════════════════════════════════
+st.subheader("① 多周期收益热力图")
+st.caption("颜色：🟢 正收益 / 🔴 负收益。按综合得分由高到低排列。")
+
+period_cols = [f"ret_{p}d" for p in PERIODS]
+heat_df = df[["display"] + period_cols].copy()
+heat_df = heat_df.set_index("display")
+heat_df.columns = [f"{p}D" for p in PERIODS]
+
+# 转为百分比
+heat_pct = heat_df.multiply(100)
+
+# 颜色范围：对称区间
+abs_max = float(heat_pct.abs().max().max())
+abs_max = max(abs_max, 1.0)
+
+fig_heat = px.imshow(
+    heat_pct,
+    color_continuous_scale="RdYlGn",
+    zmin=-abs_max, zmax=abs_max,
+    aspect="auto",
+    text_auto=".1f",
+    labels={"color": "收益%"},
+)
+fig_heat.update_traces(textfont_size=11)
+fig_heat.update_layout(
+    xaxis_title=None,
+    yaxis_title=None,
+    coloraxis_colorbar=dict(title="收益%", thickness=12),
+    margin=dict(t=10, b=10, l=10, r=80),
+    height=max(320, n_ok * 22),
+)
+st.plotly_chart(fig_heat, use_container_width=True)
+
+st.divider()
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ② 综合动量得分排名
+# ═══════════════════════════════════════════════════════════════════════════════
+st.subheader("② 综合动量得分排名")
+st.caption("横向柱：综合得分 (z-score)。颜色=动量方向：🟢加速 / 🔴减速。右标=趋势箭头。")
+
+rank_df = df[["display", "composite", "accel", "direction", "avg_r5", "avg_r20"]].copy()
+rank_df = rank_df.sort_values("composite")   # plotly horizontal bar: bottom=low
+
+colors = [_accel_color(v) for v in rank_df["accel"]]
+labels = [f"{d} {r5*100:+.2f}%"
+          for d, r5 in zip(rank_df["direction"], rank_df["avg_r5"])]
+
+fig_rank = go.Figure(go.Bar(
+    x=rank_df["composite"],
+    y=rank_df["display"],
+    orientation="h",
+    marker_color=colors,
+    text=labels,
+    textposition="outside",
+    hovertemplate=(
+        "<b>%{y}</b><br>"
+        "综合得分: %{x:.3f}<br>"
+        "<extra></extra>"
+    ),
+))
+fig_rank.add_vline(x=0, line_color="rgba(128,128,128,0.5)", line_width=1)
+
+# 警告区阴影：底部 20%
+threshold = float(rank_df["composite"].quantile(0.20))
+fig_rank.add_vrect(
+    x0=rank_df["composite"].min() - 0.1, x1=threshold,
+    fillcolor="rgba(255,200,0,0.08)", line_width=0,
+    annotation_text="⚠️ 预警区", annotation_position="top left",
+)
+
+fig_rank.update_layout(
+    xaxis_title="综合得分 (z-score)",
+    yaxis_title=None,
+    margin=dict(t=10, b=10, l=10, r=120),
+    height=max(320, n_ok * 22),
+    plot_bgcolor="rgba(0,0,0,0)",
+    paper_bgcolor="rgba(0,0,0,0)",
+    xaxis=dict(showgrid=True, gridcolor="rgba(128,128,128,0.15)"),
+)
+st.plotly_chart(fig_rank, use_container_width=True)
+
+# 预警提示
+warn_df = df[df["composite"] < threshold]
+if not warn_df.empty:
+    st.warning(
+        "⚠️ **动量预警**（综合得分后 20%）：  \n"
+        + "  ".join(f"`{r['display']}`" for _, r in warn_df.iterrows())
+    )
+
+st.divider()
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ③ 个股详情卡片
+# ═══════════════════════════════════════════════════════════════════════════════
+st.subheader("③ 个股详情")
+st.caption("点击展开查看 60 日价格走势 + 动量加速度。")
+
+# 按得分分组展示（强→中→弱）
+top_n    = max(1, n_ok // 3)
+strong   = df.head(top_n)
+moderate = df.iloc[top_n: top_n * 2]
+weak     = df.tail(n_ok - top_n * 2)
+
+for group_label, group_df in [("🟢 强势", strong), ("🟡 中性", moderate), ("🔴 弱势 / 预警", weak)]:
+    if group_df.empty:
+        continue
+    st.markdown(f"**{group_label}**")
+    cols = st.columns(min(4, len(group_df)))
+    for col_idx, (_, row) in enumerate(group_df.iterrows()):
+        with cols[col_idx % len(cols)]:
+            accel_str = f"{row['accel']*100:+.3f}%/d" if pd.notna(row['accel']) else "N/A"
+            badge = row['direction']
+            delta_color = "normal" if row['accel'] > 0 else "inverse"
+            st.metric(
+                label=f"{badge} {row['display']}",
+                value=f"${row['latest_close']:,.2f}",
+                delta=accel_str,
+                delta_color=delta_color,
+            )
+
+st.divider()
+
+# 展开个股走势
+selected = st.selectbox(
+    "🔍 查看个股走势详情",
+    options=df["display"].tolist(),
+    index=0,
+)
+
+sel_row = df[df["display"] == selected].iloc[0]
+sel_ticker = sel_row["ticker"]
+
+with st.spinner(f"加载 {selected} 历史数据…"):
+    hist = fetch_histories([sel_ticker], period="3mo")
+    close = hist.get(sel_ticker)
+
+if close is not None and len(close) >= 5:
+    close_df = close.reset_index()
+    close_df.columns = ["date", "close"]
+    close_df["ma20"] = close_df["close"].rolling(20, min_periods=5).mean()
+    # 5日动量加速度（滚动）
+    close_df["r5"]  = close_df["close"].pct_change(5).rolling(1).mean()
+    close_df["r20"] = close_df["close"].pct_change(20).rolling(1).mean()
+    close_df["accel_roll"] = (close_df["r5"] - close_df["r20"]) * 100
+
+    fig_detail = go.Figure()
+    # 收盘价
+    fig_detail.add_trace(go.Scatter(
+        x=close_df["date"], y=close_df["close"],
+        name="收盘价", line=dict(color="#4C9BE8", width=2),
+    ))
+    # MA20
+    fig_detail.add_trace(go.Scatter(
+        x=close_df["date"], y=close_df["ma20"],
+        name="MA20", line=dict(color="#E8844C", width=1.5, dash="dot"),
+    ))
+    # 动量加速度（右轴）
+    fig_detail.add_trace(go.Bar(
+        x=close_df["date"], y=close_df["accel_roll"],
+        name="动量加速度%", yaxis="y2",
+        marker_color=close_df["accel_roll"].apply(
+            lambda v: "rgba(38,166,65,0.5)" if v >= 0 else "rgba(215,58,74,0.5)"
+        ),
+    ))
+    fig_detail.update_layout(
+        title=f"{selected}  ({sel_ticker})  方向: {sel_row['direction']}",
+        yaxis=dict(title="价格 (USD)"),
+        yaxis2=dict(title="加速度 (5d−20d) %", overlaying="y", side="right",
+                    showgrid=False),
+        legend=dict(orientation="h", y=1.08),
+        hovermode="x unified",
+        margin=dict(t=60, b=20, l=20, r=60),
+        height=420,
+        plot_bgcolor="rgba(0,0,0,0)",
+        xaxis=dict(showgrid=True, gridcolor="rgba(128,128,128,0.15)"),
+    )
+    st.plotly_chart(fig_detail, use_container_width=True)
+else:
+    st.info(f"暂无 {selected} 的历史价格数据。")
+
+# 指标明细
+with st.expander(f"📋 {selected} 指标明细"):
+    metrics = {
+        "最新收盘价": f"${sel_row['latest_close']:,.2f}",
+        "综合得分 (z)": f"{sel_row['composite']:.4f}",
+        "动量加速度/日": f"{sel_row['accel']*100:+.4f}%",
+        "趋势方向": sel_row["direction"],
+        "5日均日收益": f"{sel_row['avg_r5']*100:+.3f}%",
+        "10日均日收益": f"{sel_row['avg_r10']*100:+.3f}%" if 'avg_r10' in sel_row else "N/A",
+        "20日均日收益": f"{sel_row['avg_r20']*100:+.3f}%",
+        "30日年化波动": f"{sel_row['vol_30d']*100:.1f}%" if pd.notna(sel_row.get('vol_30d')) else "N/A",
+        "10日最大回撤": f"{sel_row['drawdown_10d']*100:.2f}%" if pd.notna(sel_row.get('drawdown_10d')) else "N/A",
+        "距MA20偏离": f"{sel_row['ma20_dev']*100:+.2f}%" if pd.notna(sel_row.get('ma20_dev')) else "N/A",
+    }
+    st.table(pd.DataFrame(list(metrics.items()), columns=["指标", "值"]))
