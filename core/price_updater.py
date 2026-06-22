@@ -26,7 +26,11 @@ _CURRENCY_MAP: dict[str, str] = {
 
 
 def fetch_price(yf_ticker: str) -> Optional[float]:
-    """获取单只股票最新收盘价（原始货币）。"""
+    """获取单只股票最新收盘价（原始货币）。
+    特殊 ticker：CASH → 固定返回 1.0（美元现金，shares = 金额）。
+    """
+    if yf_ticker.upper() == config.CASH_TICKER:
+        return 1.0
     try:
         hist = yf.Ticker(yf_ticker).history(period="5d")
         if not hist.empty:

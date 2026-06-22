@@ -27,7 +27,11 @@ SECTOR_COLORS = {
     "半导体": "#B44CE8",
     "其他": "#E8D04C",
     "期权": "#A0A0A0",
+    "现金": "#5DE8D0",
 }
+
+# 现金仓位的特殊 yf_ticker（price 固定为 1.0 USD，shares = 金额）
+CASH_TICKER = "CASH"
 
 # ── 确保目录存在 ──────────────────────────────────────────────────────────────
 DATA_DIR.mkdir(parents=True, exist_ok=True)

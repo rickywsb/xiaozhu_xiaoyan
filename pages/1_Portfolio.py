@@ -16,8 +16,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import config
 from core.price_updater import load_cache, update_all_prices
 
-SECTORS    = ["光", "存", "配置", "半导体", "其他", "期权"]
-CURRENCIES = ["USD", "TWD", "GBp", "KRW", "HKD", "EUR", "CNY"]
+SECTORS    = ["光", "存", "配置", "半导体", "其他", "期权", "现金"]
+CURRENCIES = ["USD", "CASH", "TWD", "GBp", "KRW", "HKD", "EUR", "CNY"]
 
 # ─── 工具函数 ──────────────────────────────────────────────────────────────────
 
@@ -166,7 +166,10 @@ with tab_view:
         column_config={
             "现价 USD": st.column_config.NumberColumn("现价 USD", format="$%.2f"),
             "市值 USD": st.column_config.NumberColumn("市值 USD", format="$%,.0f"),
-            "占比":     st.column_config.ProgressColumn("占比", format="%.1f%%", min_value=0, max_value=1),
+            "占比":     st.column_config.ProgressColumn(
+                "占比", format="%.1f%%", min_value=0,
+                max_value=float(disp["占比"].max(skipna=True)),
+            ),
             "持股数":   st.column_config.NumberColumn("持股数", format="%.4g"),
         },
         use_container_width=True, hide_index=True, height=500,
@@ -180,8 +183,19 @@ with tab_view:
         color_map = {k: v for k, v in config.SECTOR_COLORS.items() if k in sec_df["板块"].values}
         fig_pie = px.pie(sec_df, values="市值 USD", names="板块",
                          color="板块", color_discrete_map=color_map, hole=0.38)
-        fig_pie.update_traces(textposition="outside", textinfo="percent+label")
-        fig_pie.update_layout(showlegend=False, margin=dict(t=10,b=10,l=10,r=10), height=380)
+        fig_pie.update_traces(
+            textposition="auto",
+            textinfo="percent+label",
+            insidetextorientation="auto",
+        )
+        fig_pie.update_layout(
+            showlegend=True,
+            legend=dict(orientation="v", x=1.0, y=0.5),
+            margin=dict(t=10, b=10, l=10, r=120),
+            height=380,
+            uniformtext_minsize=9,
+            uniformtext_mode="hide",
+        )
         st.plotly_chart(fig_pie, use_container_width=True)
     with chart_r:
         st.subheader("市值 Top 15")
@@ -209,7 +223,10 @@ with tab_view:
     st.dataframe(summary,
         column_config={
             "市值": st.column_config.NumberColumn("市值 USD", format="$%,.0f"),
-            "占比": st.column_config.ProgressColumn("占比", format="%.1f%%", min_value=0, max_value=1),
+            "占比": st.column_config.ProgressColumn(
+                "占比", format="%.1f%%", min_value=0,
+                max_value=float(summary["占比"].max()),
+            ),
         },
         hide_index=True, use_container_width=True)
 
@@ -220,6 +237,7 @@ with tab_edit:
     st.subheader("📋 股票持仓")
     st.caption(
         "• **YF Ticker** 为 yfinance 真实代码（如 `MRVL`、`IQE.L`、`000660.KS`）。  \n"
+        "• **现金仓位**：YF Ticker 填 `CASH`，货币选 `CASH`，持股数填金额(USD)，板块选「现金」。  \n"
         "• 最左侧 ☑ 勾选行后，工具栏🗑可删除；底部 **＋** 可新增行。  \n"
         "• **板块** 可下拉选择预设，也可**直接输入自定义名称**。  \n"
         "• 编辑完成后点击下方按钮保存。"
