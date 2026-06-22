@@ -1,8 +1,8 @@
 # 小猪小眼基金公司 · 股票分析软件 — 开发者文档
 
-> **版本**: v0.3  
+> **版本**: v0.4  
 > **日期**: 2026-06-21  
-> **状态**: 🔨 Phase 3 开发中
+> **状态**: 🔨 Phase 4 开发中
 
 ---
 
@@ -276,21 +276,23 @@ portfolio.json → [聚合] → DataFrame → [merge price_cache] → 展示表�
 - [x] **hotfix**: 饼图 `textposition="auto"` + `uniformtext_mode="hide"` + 右侧图例
 - [x] **hotfix**: 支持现金仓位（YF Ticker=`CASH`，price=1.0，shares=金额）
 
-### Phase 3：量能健康报告 🔨 开发中 (2026-06-21)
+### Phase 3：量能健康报告 ✅ 已完成 (2026-06-21)
 
 **目标**：仅对当前持仓（~35只）跑动量评分，页面响应 < 15s。
 
-- [ ] `core/daily_momentum.py` — 从 `new/daily_top10.py` 提取纯函数库
-  - `fetch_close_prices(tickers, period)` → `dict[ticker, pd.Series]`
-  - `avg_return(close, days)` / `decay_return(close, window, decay)`
-  - `momentum_acceleration(close)` → `acc = 5d_avg - 20d_avg`
-  - `score_holdings(portfolio, period, decay, window)` → `pd.DataFrame`
-- [ ] `pages/2_Momentum.py` — 三区块布局：
-  - **① 多周期收益热力图**：`plotly.imshow`，行=ticker，列=5d/10d/20d/60d，绿强红弱
-  - **② 综合动量得分排名**：横向柱状图，颜色=加速/减速，附趋势箭头 ↑↓→
-  - **③ 持仓预警栏**：得分后20%标黄色警告卡片
-- [ ] 个股 `st.expander` 卡片：60日收盘价折线 + 动量加速度折线（双轴）
-- [ ] 「⚡ 刷新量能」按钮 + 运行时间估算显示
+- [x] `core/daily_momentum.py` — 从 `new/daily_top10.py` 提取纯函数库
+  - `fetch_histories(tickers, period)` → `dict[ticker, pd.Series]`（批量下载，自动跳过 CASH）
+  - `_avg_return(close, days)` / `_decay_return(close, window, decay)` / `_total_return(close, days)`
+  - `calc_metrics(ticker, display, close, window, decay)` → dict（单股全量指标）
+  - `score_holdings(portfolio, window, decay)` → `pd.DataFrame`（Z-score 综合排序）
+  - 趋势信号：`accel = avg_r5 - avg_r20`，映射 ↑↑/↑/→/↓/↓↓
+- [x] `pages/2_Momentum.py` — 三区块布局：
+  - **① 多周期收益热力图**：`plotly.imshow`，行=ticker（按综合分排序），列=5D/10D/20D/60D，`RdYlGn`，对称色阶
+  - **② 综合动量得分排名**：横向柱状图，颜色=加速(绿)/减速(红)，底部20%黄色预警区阴影
+  - **③ 预警提示**：`st.warning` 列出得分后20%的持仓 ticker
+- [x] 个股详情：metric 卡片（强/中/弱分组）+ 下拉选股 → 60日收盘价+MA20+动量加速度双轴图
+- [x] 「⚡ 刷新量能」按钮 + 30分钟 `st.cache_data` 缓存
+- [x] 侧边栏参数：`decay` 滑块 (0.88–0.99) + `window` 滑块 (20–60)
 
 ### Phase 4：Watch List 扫描器
 
