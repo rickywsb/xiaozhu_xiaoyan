@@ -1,0 +1,52 @@
+{
+  "_note": "持仓数量(shares)和ticker需手动维护，因仓位分布在多个账户。yf_ticker为yfinance查询用的真实ticker。",
+  "accounts": [
+    {
+      "name": "Consolidated",
+      "note": "所有账户合并视图。后续可按 MooMoo / Joint Wros / Individual / Robinhood 等拆分。",
+      "positions": [
+        { "display": "NVDA",       "yf_ticker": "NVDA",       "shares": 141.0,    "sector": "配置",  "native_currency": "USD", "note": "" },
+        { "display": "MU",         "yf_ticker": "MU",         "shares": 39.32,    "sector": "存",    "native_currency": "USD", "note": "33+6.32" },
+        { "display": "LITE",       "yf_ticker": "LITE",       "shares": 32.0,     "sector": "光",    "native_currency": "USD", "note": "" },
+        { "display": "GOOGL",      "yf_ticker": "GOOGL",      "shares": 18.0,     "sector": "配置",  "native_currency": "USD", "note": "" },
+        { "display": "AVGO",       "yf_ticker": "AVGO",       "shares": 92.037,   "sector": "配置",  "native_currency": "USD", "note": "63+21.039+5+2.998" },
+        { "display": "COHR",       "yf_ticker": "COHR",       "shares": 27.5,     "sector": "光",    "native_currency": "USD", "note": "" },
+        { "display": "SIVEF",      "yf_ticker": "SIVEF",      "shares": 7200.0,   "sector": "光",    "native_currency": "USD", "note": "OTC" },
+        { "display": "QQQM",       "yf_ticker": "QQQM",       "shares": 44.0,     "sector": "配置",  "native_currency": "USD", "note": "ETF" },
+        { "display": "GLW",        "yf_ticker": "GLW",        "shares": 40.0,     "sector": "光",    "native_currency": "USD", "note": "" },
+        { "display": "MARVEL",     "yf_ticker": "MRVL",       "shares": 45.0,     "sector": "光",    "native_currency": "USD", "note": "Marvell, 32+3+10" },
+        { "display": "AEHR",       "yf_ticker": "AEHR",       "shares": 67.0,     "sector": "光",    "native_currency": "USD", "note": "37+30" },
+        { "display": "AAOI",       "yf_ticker": "AAOI",       "shares": 68.0,     "sector": "光",    "native_currency": "USD", "note": "" },
+        { "display": "AAOX",       "yf_ticker": "AAOX",       "shares": 3.0,      "sector": "光",    "native_currency": "USD", "note": "" },
+        { "display": "NOK",        "yf_ticker": "NOK",        "shares": 654.0,    "sector": "光",    "native_currency": "USD", "note": "350+139+165" },
+        { "display": "AXTI",       "yf_ticker": "AXTI",       "shares": 75.0,     "sector": "光",    "native_currency": "USD", "note": "" },
+        { "display": "SNDK",       "yf_ticker": "SNDK",       "shares": 5.0,      "sector": "存",    "native_currency": "USD", "note": "" },
+        { "display": "3363 Foci",  "yf_ticker": "3363.TWO",   "shares": 20.0,     "sector": "光",    "native_currency": "TWD", "note": "台湾OTC" },
+        { "display": "IQE",        "yf_ticker": "IQE.L",      "shares": 500.0,    "sector": "光",    "native_currency": "GBp", "note": "伦敦，便士计价" },
+        { "display": "SIVE",       "yf_ticker": "SIVEF",      "shares": 300.0,    "sector": "光",    "native_currency": "USD", "note": "同SIVEF底层资产" },
+        { "display": "MSFT",       "yf_ticker": "MSFT",       "shares": 145.0915, "sector": "配置",  "native_currency": "USD", "note": "" },
+        { "display": "INTC",       "yf_ticker": "INTC",       "shares": 10.0,     "sector": "半导体","native_currency": "USD", "note": "" },
+        { "display": "NBIS",       "yf_ticker": "NBIS",       "shares": 35.0,     "sector": "其他",  "native_currency": "USD", "note": "Nebius" },
+        { "display": "EWY",        "yf_ticker": "EWY",        "shares": 6.0,      "sector": "存",    "native_currency": "USD", "note": "韩国ETF" },
+        { "display": "VRT",        "yf_ticker": "VRT",        "shares": 2.0,      "sector": "其他",  "native_currency": "USD", "note": "" },
+        { "display": "CIENA",      "yf_ticker": "CIEN",       "shares": 7.0,      "sector": "光",    "native_currency": "USD", "note": "Ciena Corp" },
+        { "display": "SLOIY",      "yf_ticker": "SLOIY",      "shares": 20.0,     "sector": "光",    "native_currency": "USD", "note": "OTC ADR" },
+        { "display": "SLOIF",      "yf_ticker": "SLOIF",      "shares": 30.0,     "sector": "光",    "native_currency": "USD", "note": "OTC" },
+        { "display": "ARM",        "yf_ticker": "ARM",        "shares": 20.0,     "sector": "半导体","native_currency": "USD", "note": "" },
+        { "display": "AMD",        "yf_ticker": "AMD",        "shares": 6.0,      "sector": "半导体","native_currency": "USD", "note": "" },
+        { "display": "LPKF",       "yf_ticker": "LPKFF",      "shares": 200.0,    "sector": "光",    "native_currency": "USD", "note": "LPKF Laser OTC" },
+        { "display": "DRAM",       "yf_ticker": "DRAM",       "shares": 66.0,     "sector": "存",    "native_currency": "USD", "note": "17+9+40" },
+        { "display": "NVTS",       "yf_ticker": "NVTS",       "shares": 200.0,    "sector": "其他",  "native_currency": "USD", "note": "Navitas" },
+        { "display": "SK Hynix",   "yf_ticker": "000660.KS",  "shares": 3.0,      "sector": "存",    "native_currency": "KRW", "note": "韩国交易所" },
+        { "display": "2倍海力士",  "yf_ticker": "7709.HK",    "shares": 100.0,    "sector": "存",    "native_currency": "HKD", "note": "南方两倍做多海力士，港股" },
+        { "display": "XFAB",       "yf_ticker": "XFAB.PA",    "shares": 130.0,    "sector": "半导体","native_currency": "EUR", "note": "巴黎交易所" }
+      ]
+    }
+  ],
+  "manual_values": {
+    "GLW Call":          6055.31,
+    "MARVEL CALL":       18500.0,
+    "NOK Call 2026 12":  1775.0
+  },
+  "last_modified": "2026-06-21"
+}

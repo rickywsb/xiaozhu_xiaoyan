@@ -1,0 +1,9 @@
+data/price_cache.json
+data/fx_cache.json
+data/snapshots/
+__pycache__/
+**/__pycache__/
+.DS_Store
+*.pyc
+backups/
+
