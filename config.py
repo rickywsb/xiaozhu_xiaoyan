@@ -12,6 +12,7 @@ PORTFOLIO_PATH   = DATA_DIR / "portfolio.json"
 PRICE_CACHE_PATH = DATA_DIR / "price_cache.json"
 FX_CACHE_PATH    = DATA_DIR / "fx_cache.json"
 WATCHLIST_PATH   = DATA_DIR / "watchlist.json"
+NOTES_DIR        = DATA_DIR / "notes"
 
 # ── 关联的历史 xlsx（仅供参考/导出，不作为数据源）────────────────────────────
 XLSX_PATH = APP_DIR.parent / "value_update" / "小白小鸡毛基金管理公司.xlsx"
