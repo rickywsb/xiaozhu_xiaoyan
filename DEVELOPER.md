@@ -1,8 +1,8 @@
 # 小猪小眼基金公司 · 股票分析软件 — 开发者文档
 
-> **版本**: v0.1-draft  
+> **版本**: v0.2  
 > **日期**: 2026-06-21  
-> **状态**: 📐 设计阶段
+> **状态**: 🔨 Phase 2 开发中
 
 ---
 
@@ -252,22 +252,26 @@ portfolio.json → [聚合] → DataFrame → [merge price_cache] → 展示表�
 
 ## 6. 开发路线图
 
-### Phase 1：基础骨架（当前目标）
+### Phase 1：基础骨架 ✅ 已完成 (2026-06-21)
 
-- [ ] `requirements.txt` — 依赖清单
-- [ ] `config.py` — 路径常量
-- [ ] `data/portfolio.json` — 初始化持仓数据（从 xlsx 迁移）
-- [ ] `core/price_updater.py` — 迁移 + 重构 `update_prices.py`，输出写 `price_cache.json`
-- [ ] `core/fx.py` — 独立 FX 缓存模块（60 分钟内复用，不重复请求）
-- [ ] `app.py` — Streamlit 多页入口
-- [ ] `pages/1_Portfolio.py` — 持仓表格 + 一键更新按钮（无图表先跑通）
+- [x] `requirements.txt` — 依赖清单
+- [x] `config.py` — 路径常量 + 板块颜色映射
+- [x] `data/portfolio.json` — 35 个持仓初始化（从 xlsx 迁移）
+- [x] `core/price_updater.py` — 重构 update_prices.py，输出写 `price_cache.json`
+- [x] `core/fx.py` — FX 缓存模块（60 分钟复用）
+- [x] `app.py` — Streamlit 多页入口（三页导航）
+- [x] `pages/1_Portfolio.py` — 持仓表格 + 一键更新 + 板块饼图 + Top15 柱图
 
-### Phase 2：可视化持仓
+### Phase 2：持仓编辑器 🔨 开发中 (2026-06-21)
 
-- [ ] `utils/charts.py` — 饼图 / 权重柱状图
-- [ ] `pages/1_Portfolio.py` — 加入板块饼图 + 账户净值对比图
-- [ ] `utils/formatters.py` — 涨跌颜色、百分比格式
-- [ ] `streamlit-aggrid` 可编辑表格（手动改 shares / 加 ticker）
+- [x] 板块饼图 + Top 15 市值柱状图（已在 Phase 1 实现）
+- [ ] `pages/1_Portfolio.py` — Tab 切换：📊 概览 / ✏️ 编辑持仓
+- [ ] `st.data_editor` 可编辑表格（`num_rows="dynamic"` 支持增删行）
+  - 列：显示名 / YF Ticker / 持股数 / 板块（下拉+自定义） / 货币（下拉） / 备注
+  - 操作：勾选删除 / 底部「+」新增行
+- [ ] 手动价值编辑器（期权等 → 直接填市值）
+- [ ] 💾 保存持仓配置 → 写回 `portfolio.json`
+- [ ] 🚀 保存 + 获取最新价格 → 保存后立即 fetch + rerun
 
 ### Phase 3：量能健康报告
 
