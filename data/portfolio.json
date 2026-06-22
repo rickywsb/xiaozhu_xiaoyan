@@ -190,14 +190,6 @@
           "note": ""
         },
         {
-          "display": "CIENA",
-          "yf_ticker": "CIEN",
-          "shares": 6.0,
-          "sector": "光",
-          "native_currency": "USD",
-          "note": "Ciena Corp"
-        },
-        {
           "display": "SLOIY",
           "yf_ticker": "SLOIY",
           "shares": 20.0,
@@ -282,6 +274,14 @@
           "yf_ticker": "CASH",
           "shares": 43900.0,
           "sector": "现金",
+          "native_currency": "USD",
+          "note": "None"
+        },
+        {
+          "display": "2倍闪迪",
+          "yf_ticker": "SNXX",
+          "shares": 50.0,
+          "sector": "存",
           "native_currency": "USD",
           "note": "None"
         }
