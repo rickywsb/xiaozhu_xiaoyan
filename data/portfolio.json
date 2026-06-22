@@ -276,6 +276,14 @@
           "sector": "半导体",
           "native_currency": "EUR",
           "note": "巴黎交易所"
+        },
+        {
+          "display": "Cash",
+          "yf_ticker": "CASH",
+          "shares": 46011.0,
+          "sector": "现金",
+          "native_currency": "USD",
+          "note": "None"
         }
       ]
     }
