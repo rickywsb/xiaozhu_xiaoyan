@@ -4,12 +4,9 @@
 不依赖全宇宙 universe 构建，响应速度快（~35 只持仓 < 15s）。
 """
 
-from __future__ import annotations
-
 import math
 import sys
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -29,7 +26,7 @@ FETCH_PERIOD = "6mo"
 
 # ─── 基础指标 ─────────────────────────────────────────────────────────────────
 
-def _avg_return(close: pd.Series, days: int) -> Optional[float]:
+def _avg_return(close: pd.Series, days: int) -> float | None:
     """最近 days 个交易日的平均日收益率。"""
     c = close.dropna().sort_index()
     rets = c.pct_change().dropna().tail(days)
@@ -38,7 +35,7 @@ def _avg_return(close: pd.Series, days: int) -> Optional[float]:
     return float(rets.mean())
 
 
-def _total_return(close: pd.Series, days: int) -> Optional[float]:
+def _total_return(close: pd.Series, days: int) -> float | None:
     """最近 days 个交易日的区间总收益率（用于热力图）。"""
     c = close.dropna().sort_index()
     if len(c) < days + 1:
@@ -48,7 +45,7 @@ def _total_return(close: pd.Series, days: int) -> Optional[float]:
     return (end / start - 1) if start > 0 else None
 
 
-def _decay_return(close: pd.Series, window: int, decay: float) -> Optional[float]:
+def _decay_return(close: pd.Series, window: int, decay: float) -> float | None:
     """指数衰减加权日收益率（近期权重高）。"""
     c = close.dropna().sort_index()
     rets = c.pct_change().dropna().tail(window).values
@@ -59,13 +56,13 @@ def _decay_return(close: pd.Series, window: int, decay: float) -> Optional[float
     return float(np.dot(w, rets) / w.sum())
 
 
-def _vol_30d(close: pd.Series) -> Optional[float]:
+def _vol_30d(close: pd.Series) -> float | None:
     c = close.dropna().sort_index()
     r = c.pct_change().dropna().tail(30)
     return float(r.std(ddof=0) * math.sqrt(252)) if len(r) >= 15 else None
 
 
-def _drawdown_10d(close: pd.Series) -> Optional[float]:
+def _drawdown_10d(close: pd.Series) -> float | None:
     c = close.dropna().sort_index().tail(10)
     if len(c) < 2:
         return None
@@ -73,7 +70,7 @@ def _drawdown_10d(close: pd.Series) -> Optional[float]:
     return float(c.iloc[-1] / high - 1) if high > 0 else None
 
 
-def _price_vs_ma(close: pd.Series, period: int = 20) -> Optional[float]:
+def _price_vs_ma(close: pd.Series, period: int = 20) -> float | None:
     c = close.dropna().sort_index()
     if len(c) < period:
         return None
@@ -131,7 +128,7 @@ def fetch_histories(tickers: list[str], period: str = FETCH_PERIOD) -> dict[str,
 
 def calc_metrics(ticker: str, display: str, close: pd.Series,
                  window: int = DEFAULT_WINDOW,
-                 decay: float = DEFAULT_DECAY) -> Optional[dict]:
+                 decay: float = DEFAULT_DECAY) -> dict | None:
     """
     计算单只股票的所有动量指标。数据不足时返回 None。
     """

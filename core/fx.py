@@ -1,7 +1,5 @@
 """core/fx.py — FX 汇率获取，带 60 分钟文件缓存"""
 
-from __future__ import annotations
-
 import json
 import sys
 from datetime import datetime, timedelta

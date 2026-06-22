@@ -1,12 +1,9 @@
 """core/price_updater.py — 抓取最新收盘价并换算为 USD"""
 
-from __future__ import annotations
-
 import json
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 import yfinance as yf
 
@@ -25,7 +22,7 @@ _CURRENCY_MAP: dict[str, str] = {
 }
 
 
-def fetch_price(yf_ticker: str) -> Optional[float]:
+def fetch_price(yf_ticker: str) -> float | None:
     """获取单只股票最新收盘价（原始货币）。
     特殊 ticker：CASH → 固定返回 1.0（美元现金，shares = 金额）。
     """
@@ -95,7 +92,7 @@ def update_all_prices(portfolio: dict) -> dict:
     return cache
 
 
-def load_cache() -> Optional[dict]:
+def load_cache() -> dict | None:
     """读取价格缓存，不存在则返回 None。"""
     if config.PRICE_CACHE_PATH.exists():
         try:

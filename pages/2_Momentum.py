@@ -1,7 +1,5 @@
 """pages/2_Momentum.py — 量能健康报告"""
 
-from __future__ import annotations
-
 import json
 import sys
 from pathlib import Path

@@ -1,7 +1,5 @@
 """pages/3_Watchlist.py — 潜力 Watch List（Phase 4）"""
 
-from __future__ import annotations
-
 import json
 import sys
 from datetime import date
