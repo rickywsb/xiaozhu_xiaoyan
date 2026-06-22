@@ -1,6 +1,6 @@
 # 小猪小眼基金公司 · 股票分析软件 — 开发者文档
 
-> **版本**: v0.4  
+> **版本**: v0.5  
 > **日期**: 2026-06-21  
 > **状态**: 🔨 Phase 4 开发中
 
@@ -294,11 +294,15 @@ portfolio.json → [聚合] → DataFrame → [merge price_cache] → 展示表�
 - [x] 「⚡ 刷新量能」按钮 + 30分钟 `st.cache_data` 缓存
 - [x] 侧边栏参数：`decay` 滑块 (0.88–0.99) + `window` 滑块 (20–60)
 
-### Phase 4：Watch List 扫描器
+### Phase 4：Watch List 扫描器 ✅ 已完成 (2026-06-21)
 
-- [ ] `core/weekly_tracker.py` — 迁移 `weekly_tracker.py`（函数化）
-- [ ] `pages/3_Watchlist.py` — 散点图 + 周度 diff + 告警
-- [ ] 快照管理：自动存 `data/snapshots/`，可对比任意两日
+- [x] `data/watchlist.json` — 默认 31 只 ticker 初始化
+- [x] `core/daily_momentum.py` — 新增 `score_ticker_list(tickers, labels, window, decay)` 平铺列表评分函数
+- [x] `pages/3_Watchlist.py` — 三 Tab 布局：
+  - **📊 扫描排名** Tab：Top5 卡片 + 散点图（综合分×动量加速，已持仓金色）+ 排名柱图 + 明细表
+  - **📈 周度追踪** Tab：保存当日快照 `data/snapshots/YYYY-MM-DD.csv`，对比任意两日快照，排名变化柱图 + Top N 进出告警
+  - **✏️ 编辑列表** Tab：`st.data_editor` 增删 ticker + 一键把全部持仓加入 Watch List
+- [x] 30 分钟 `st.cache_data` 缓存，与 Phase 3 和谐统一参数
 
 ### Phase 5：打磨
 

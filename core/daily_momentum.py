@@ -229,3 +229,53 @@ def score_holdings(portfolio: dict,
     df["direction"] = df["accel"].apply(_direction)
 
     return df.sort_values("composite", ascending=False).reset_index(drop=True)
+
+
+# ─── 批量评分（Watch List 用）────────────────────────────────────────────────
+
+def score_ticker_list(tickers: list[str],
+                      labels: dict[str, str] | None = None,
+                      window: int = DEFAULT_WINDOW,
+                      decay: float = DEFAULT_DECAY) -> pd.DataFrame:
+    """
+    对平铺的 ticker 列表评分（不需要 portfolio dict 结构）。
+    labels: {yf_ticker: display_name}，可选；未提供则直接用 ticker 作为显示名。
+    返回按综合得分排序的 DataFrame（与 score_holdings 结构一致）。
+    """
+    if labels is None:
+        labels = {}
+
+    import config
+    real = [t for t in tickers if t.upper() != config.CASH_TICKER]
+    histories = fetch_histories(real)
+
+    rows = []
+    for t in real:
+        close = histories.get(t)
+        if close is None or len(close) < 22:
+            continue
+        m = calc_metrics(t, labels.get(t, t), close, window, decay)
+        if m:
+            rows.append(m)
+
+    if not rows:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(rows)
+    df["z_a"]   = _zscore(df["score_a"])
+    df["z_b"]   = _zscore(df["score_b"])
+    df["z_vol"] = _zscore(df["vol_30d"])
+    df["composite"] = (0.55 * df["z_a"] + 0.45 * df["z_b"] - 0.08 * df["z_vol"].fillna(0))
+
+    def _direction(a):
+        if pd.isna(a):  return "→"
+        if a > 0.001:   return "↑↑"
+        if a > 0.0003:  return "↑"
+        if a < -0.001:  return "↓↓"
+        if a < -0.0003: return "↓"
+        return "→"
+
+    df["direction"] = df["accel"].apply(_direction)
+    df["rank"]      = range(1, len(df) + 1)
+
+    return df.sort_values("composite", ascending=False).reset_index(drop=True)
