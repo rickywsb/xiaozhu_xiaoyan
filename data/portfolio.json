@@ -190,6 +190,14 @@
           "note": ""
         },
         {
+          "display": "CIENA",
+          "yf_ticker": "CIEN",
+          "shares": 6.0,
+          "sector": "光",
+          "native_currency": "USD",
+          "note": "Ciena Corp"
+        },
+        {
           "display": "SLOIY",
           "yf_ticker": "SLOIY",
           "shares": 20.0,
@@ -272,16 +280,8 @@
         {
           "display": "Cash",
           "yf_ticker": "CASH",
-          "shares": 48654.0,
+          "shares": 439000.0,
           "sector": "现金",
-          "native_currency": "USD",
-          "note": "None"
-        },
-        {
-          "display": "SNXX",
-          "yf_ticker": "SNXX",
-          "shares": 50.0,
-          "sector": "存",
           "native_currency": "USD",
           "note": "None"
         }
@@ -289,9 +289,9 @@
     }
   ],
   "manual_values": {
-    "GLW Call": 8855.0,
-    "MARVEL CALL": 17750.0,
-    "NOK Call 2026 12": 2025.0
+    "GLW Call": 7636.72,
+    "MARVEL CALL": 18500.0,
+    "NOK Call 2026 12": 1775.0
   },
   "last_modified": "2026-06-22"
 }
