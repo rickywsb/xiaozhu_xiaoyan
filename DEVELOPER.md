@@ -1,8 +1,8 @@
 # 小猪小眼基金公司 · 股票分析软件 — 开发者文档
 
-> **版本**: v0.6  
-> **日期**: 2026-06-21  
-> **状态**: 🔨 Phase 5 完成
+> **版本**: v0.7  
+> **日期**: 2026-06-22  
+> **状态**: 🔨 Phase 6 设计中
 
 ---
 
@@ -338,7 +338,145 @@ GITHUB_REPO  = "rickywsb/xiaozhu_xiaoyan"
 
 ---
 
-## 7. 关键设计决策
+### Phase 6：净值趋势 + 个股技术图表 🔨 设计中 (2026-06-22)
+
+---
+
+#### 6A — 每日持仓总额变化趋势
+
+**目标**：自动记录每次价格更新时的总净值，形成历史曲线，直观看出资金增减趋势。
+
+**设计原则**：
+- 不需要成本价/盈亏，只追踪**总市值快照**
+- Schema 不破坏（不修改 `portfolio.json` 结构）
+- 未来可扩展个股成本记录，但当前只存总值
+
+**存储**：`data/portfolio_value_history.csv`
+
+```csv
+date,total_value,note
+2026-06-21,1234567.89,
+2026-06-22,1256789.01,
+```
+
+**触发时机**：
+- 每次用户点击「🔄 一键更新价格」后，自动 append 当日记录
+- 同一天多次更新只保留最后一条（按日期 upsert）
+
+**新增模块**：`core/value_history.py`
+```python
+def append_value(total_usd: float, note: str = "") -> None
+    # 追加/更新今日总净值到 CSV
+def load_history() -> pd.DataFrame
+    # 返回历史净值 DataFrame
+```
+
+**页面展示**：在 `pages/1_Portfolio.py` 新增 Tab 或折叠区 **「📈 净值历史」**
+
+布局：
+```
+┌────────────────────────────────────────────────────┐
+│ 📈 净值历史趋势                                       │
+│ [时间范围: 1M  3M  6M  全部]                          │
+├────────────────────────────────────────────────────┤
+│  KPI: 当前净值 | 较昨日 +X% | 较上周 +X% | 较上月 +X% │
+├────────────────────────────────────────────────────┤
+│  折线图: x=日期, y=总净值(USD)                        │
+│  悬停显示: 日期 / 净值 / 较前日变化%                   │
+├────────────────────────────────────────────────────┤
+│  柱状图: 每日涨跌幅（绿涨红跌）                       │
+└────────────────────────────────────────────────────┘
+```
+
+**GitHub 同步**：历史 CSV 也通过 `sync_to_github` 写回，云端数据不丢失。
+
+**待实现清单**：
+- [ ] `core/value_history.py` — `append_value()` / `load_history()`
+- [ ] `pages/1_Portfolio.py` — 新增「📈 净值历史」Tab
+  - 时间范围筛选（1M/3M/6M/All）
+  - KPI 卡片（较昨日 / 较上周 / 较上月变化%）
+  - Plotly 折线图（总净值）+ 柱状图（日涨跌幅，绿涨红跌）
+- [ ] `core/price_updater.py` / `pages/1_Portfolio.py` — 更新价格后自动调用 `append_value()`
+- [ ] `sync_to_github` 同步 `data/portfolio_value_history.csv`
+
+---
+
+#### 6B — 个股技术指标图表
+
+**目标**：在量能页面内嵌个股 K 线 + 技术指标，无需跳转第三方工具。
+
+**数据来源**：yfinance `history(period, interval)` 获取 OHLCV 数据
+
+**新增模块**：`core/technical_analysis.py`
+```python
+def get_ohlcv(ticker: str, period: str = "6mo", interval: str = "1d") -> pd.DataFrame
+    # 返回 OHLCV + Date DataFrame
+
+def calc_rsi(close: pd.Series, period: int = 14) -> pd.Series
+    # 标准 Wilder RSI
+
+def calc_macd(close: pd.Series,
+              fast: int = 12, slow: int = 26, signal: int = 9
+              ) -> tuple[pd.Series, pd.Series, pd.Series]
+    # 返回 (macd_line, signal_line, histogram)
+
+def calc_bollinger(close: pd.Series, period: int = 20, std: float = 2.0
+                   ) -> tuple[pd.Series, pd.Series, pd.Series]
+    # 返回 (upper, mid, lower)
+
+def build_candlestick_chart(df: pd.DataFrame, ticker: str,
+                             mas: list[int] = [5, 20, 60],
+                             show_volume: bool = True,
+                             show_rsi: bool = True,
+                             show_macd: bool = False) -> go.Figure
+    # 返回完整 Plotly Figure（多子图）
+```
+
+**图表结构（Plotly make_subplots）**：
+```
+┌──────────────────────────────────────────────────┐
+│  [选股下拉] [周期: 1M 3M 6M 1Y] [指标: RSI MACD BB]│
+├──────────────────────────────────────────────────┤
+│  主图 (70%高度)                                    │
+│  · 蜡烛图 (OHLC)                                  │
+│  · MA5 / MA20 / MA60 叠加线                       │
+│  · Bollinger Bands（可开关）                       │
+├──────────────────────────────────────────────────┤
+│  成交量 (15%高度，绿涨红跌)                         │
+├──────────────────────────────────────────────────┤
+│  RSI (15%高度，可选)                               │
+│  · RSI14 折线，超买70/超卖30 水平线                 │
+├──────────────────────────────────────────────────┤
+│  MACD (可选，折叠展开)                             │
+│  · DIF / DEA 折线 + 柱状图                        │
+└──────────────────────────────────────────────────┘
+```
+
+**页面位置**：`pages/2_Momentum.py` 新增第四个 Tab **「🕯 技术图表」**
+
+**选股范围**：持仓 + Watchlist 合集，下拉选择
+
+**缓存**：`@st.cache_data(ttl=3600)` — OHLCV 数据 1 小时缓存
+
+**待实现清单**：
+- [ ] `core/technical_analysis.py` — 四个计算函数 + `build_candlestick_chart()`
+- [ ] `pages/2_Momentum.py` — 新增「🕯 技术图表」Tab
+  - 下拉选股（持仓+watchlist）
+  - 周期选择（1M/3M/6M/1Y）
+  - 指标开关（RSI / MACD / Bollinger）
+  - Plotly 多子图 K 线图
+- [ ] `requirements.txt` — 确认 `plotly>=5.22`（已有）
+
+---
+
+#### Phase 6 整体优先级
+
+| 功能 | 难度 | 价值 | 优先级 |
+|---|---|---|---|
+| 6A 净值趋势 | ⭐⭐ 低 | 高 | 先做 |
+| 6B 技术图表 | ⭐⭐⭐ 中 | 高 | 后做 |
+
+
 
 ### 7.1 持仓数据源：JSON 而非 xlsx
 
