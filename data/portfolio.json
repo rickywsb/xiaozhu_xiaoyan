@@ -190,14 +190,6 @@
           "note": ""
         },
         {
-          "display": "CIENA",
-          "yf_ticker": "CIEN",
-          "shares": 6.0,
-          "sector": "光",
-          "native_currency": "USD",
-          "note": "Ciena Corp"
-        },
-        {
           "display": "SLOIY",
           "yf_ticker": "SLOIY",
           "shares": 20.0,
@@ -293,5 +285,5 @@
     "MARVEL CALL": 18500.0,
     "NOK Call 2026 12": 1775.0
   },
-  "last_modified": "2026-06-21"
+  "last_modified": "2026-06-22"
 }
