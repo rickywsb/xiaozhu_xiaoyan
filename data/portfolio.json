@@ -276,6 +276,14 @@
           "sector": "现金",
           "native_currency": "USD",
           "note": "None"
+        },
+        {
+          "display": "SNXX",
+          "yf_ticker": "SNXX",
+          "shares": 50.0,
+          "sector": "存",
+          "native_currency": "USD",
+          "note": "None"
         }
       ]
     }
