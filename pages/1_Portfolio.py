@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import config
 from core.price_updater import load_cache, update_all_prices
 from core.github_storage import sync_to_github
+from core.value_history import append_value, load_history, HISTORY_PATH
 
 SECTORS    = ["光", "存", "配置", "半导体", "其他", "期权", "现金"]
 CURRENCIES = ["USD", "CASH", "TWD", "GBp", "KRW", "HKD", "EUR", "CNY"]
@@ -131,9 +132,19 @@ with col_btn:
             st.warning(f"⚠️ 失败: {', '.join(cache['failed'])}")
         else:
             st.success(f"✅ {len(cache['prices'])} 只全部更新成功")
+        # 记录当日总净值到历史
+        try:
+            _, _total_nav = _build_view_df(portfolio, cache["prices"])
+            append_value(_total_nav)
+            sync_to_github(
+                HISTORY_PATH, "data/portfolio_value_history.csv",
+                "chore: record daily portfolio value",
+            )
+        except Exception:
+            pass
         st.rerun()
 
-tab_view, tab_edit = st.tabs(["📊 持仓概览", "✏️ 编辑持仓"])
+tab_view, tab_history, tab_edit = st.tabs(["📊 持仓概览", "📈 净值历史", "✏️ 编辑持仓"])
 
 # ═══════════════════════════════════════════════════
 # TAB 1 — 持仓概览
@@ -230,7 +241,107 @@ with tab_view:
         hide_index=True, use_container_width=True)
 
 # ═══════════════════════════════════════════════════
-# TAB 2 — 编辑持仓
+# TAB 2 — 净值历史
+# ═══════════════════════════════════════════════════
+with tab_history:
+    st.subheader("📈 净值历史趋势")
+    hist = load_history()
+
+    if hist.empty or len(hist) < 1:
+        st.info("暂无历史数据。每次点击「🔄 一键更新价格」会自动记录当日总净值，"
+                "积累几天后这里就会显示趋势曲线。")
+    else:
+        # 时间范围筛选
+        rng = st.radio("时间范围", ["1M", "3M", "6M", "全部"],
+                       index=3, horizontal=True, label_visibility="collapsed")
+        days_map = {"1M": 30, "3M": 90, "6M": 180}
+        view = hist.copy()
+        if rng in days_map:
+            cutoff = pd.Timestamp.now().normalize() - pd.Timedelta(days=days_map[rng])
+            view = view[view["date"] >= cutoff]
+        if view.empty:
+            view = hist.copy()
+
+        view = view.sort_values("date").reset_index(drop=True)
+        view["change"] = view["total_value"].diff()
+        view["change_pct"] = view["total_value"].pct_change() * 100
+
+        # KPI 卡片
+        latest = float(view["total_value"].iloc[-1])
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("当前净值", f"${latest:,.0f}")
+
+        def _delta_vs(days_back: int, label: str, col):
+            ref_date = view["date"].iloc[-1] - pd.Timedelta(days=days_back)
+            past = view[view["date"] <= ref_date]
+            if past.empty:
+                col.metric(label, "—")
+                return
+            base = float(past["total_value"].iloc[-1])
+            if base > 0:
+                pct = (latest / base - 1) * 100
+                col.metric(label, f"${latest - base:,.0f}", delta=f"{pct:+.2f}%")
+            else:
+                col.metric(label, "—")
+
+        _delta_vs(1, "较昨日", c2)
+        _delta_vs(7, "较上周", c3)
+        _delta_vs(30, "较上月", c4)
+
+        st.divider()
+
+        # 折线图：总净值
+        fig_line = go.Figure()
+        fig_line.add_trace(go.Scatter(
+            x=view["date"], y=view["total_value"],
+            mode="lines+markers", name="总净值",
+            line=dict(color="#4C9BE8", width=2.5),
+            marker=dict(size=6),
+            fill="tozeroy", fillcolor="rgba(76,155,232,0.08)",
+            hovertemplate="%{x|%Y-%m-%d}<br>净值: $%{y:,.0f}<extra></extra>",
+        ))
+        fig_line.update_layout(
+            title="总净值走势 (USD)",
+            height=380,
+            margin=dict(t=50, b=20, l=20, r=20),
+            plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+            yaxis=dict(showgrid=True, gridcolor="rgba(128,128,128,0.15)"),
+            xaxis=dict(showgrid=False),
+            hovermode="x unified",
+        )
+        st.plotly_chart(fig_line, use_container_width=True)
+
+        # 柱状图：每日涨跌幅
+        bars = view.dropna(subset=["change_pct"])
+        if not bars.empty:
+            bar_clr = ["#26a641" if v >= 0 else "#d73a4a" for v in bars["change_pct"]]
+            fig_bar = go.Figure(go.Bar(
+                x=bars["date"], y=bars["change_pct"],
+                marker_color=bar_clr,
+                text=[f"{v:+.2f}%" for v in bars["change_pct"]],
+                textposition="outside",
+                hovertemplate="%{x|%Y-%m-%d}<br>涨跌: %{y:+.2f}%<extra></extra>",
+            ))
+            fig_bar.add_hline(y=0, line_color="rgba(128,128,128,0.5)", line_width=1)
+            fig_bar.update_layout(
+                title="每日涨跌幅 (%)",
+                height=300,
+                margin=dict(t=50, b=20, l=20, r=20),
+                plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+                yaxis=dict(showgrid=True, gridcolor="rgba(128,128,128,0.15)"),
+                xaxis=dict(showgrid=False),
+            )
+            st.plotly_chart(fig_bar, use_container_width=True)
+
+        with st.expander("📋 历史数据明细"):
+            tbl = view[["date", "total_value", "change", "change_pct"]].copy()
+            tbl["date"] = tbl["date"].dt.strftime("%Y-%m-%d")
+            tbl.columns = ["日期", "总净值", "较前日变化", "涨跌幅%"]
+            tbl = tbl.sort_values("日期", ascending=False)
+            st.dataframe(tbl, use_container_width=True, hide_index=True)
+
+# ═══════════════════════════════════════════════════
+# TAB 3 — 编辑持仓
 # ═══════════════════════════════════════════════════
 with tab_edit:
     st.subheader("📋 股票持仓")
