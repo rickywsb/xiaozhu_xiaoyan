@@ -101,7 +101,7 @@ def _build_view_df(portfolio: dict, prices: dict) -> tuple[pd.DataFrame, float]:
         })
     df = pd.DataFrame(rows)
     total = df["市值 USD"].sum(skipna=True)
-    df["占比"] = df["市值 USD"].apply(lambda v: v / total if (pd.notna(v) and total > 0) else None)
+    df["占比"] = df["市值 USD"].apply(lambda v: v / total * 100 if (pd.notna(v) and total > 0) else None)
     df = df.sort_values("市值 USD", ascending=False, na_position="last").reset_index(drop=True)
     return df, float(total)
 
@@ -151,7 +151,7 @@ with tab_view:
     k2.metric("📋 持仓数量", len(df))
     top_row = df.iloc[0]
     k3.metric("🏆 最大持仓",
-        f"{top_row['股票']}  {top_row['占比']:.1%}" if pd.notna(top_row["占比"]) else top_row["股票"])
+        f"{top_row['股票']}  {top_row['占比']:.1f}%" if pd.notna(top_row["占比"]) else top_row["股票"])
     failed = cache.get("failed", [])
     k4.metric("⚠️ 获取失败", len(failed),
         delta=", ".join(failed) if failed else None, delta_color="inverse")
@@ -168,7 +168,7 @@ with tab_view:
             "市值 USD": st.column_config.NumberColumn("市值 USD", format="$%,.0f"),
             "占比":     st.column_config.ProgressColumn(
                 "占比", format="%.1f%%", min_value=0,
-                max_value=float(disp["占比"].max(skipna=True)),
+                max_value=float(disp["占比"].max(skipna=True)),  # already in %
             ),
             "持股数":   st.column_config.NumberColumn("持股数", format="%.4g"),
         },
@@ -219,7 +219,7 @@ with tab_view:
     st.subheader("板块汇总")
     summary = (df.groupby("板块").agg(持仓数=("股票","count"), 市值=("市值 USD","sum"))
                .reset_index().sort_values("市值", ascending=False))
-    summary["占比"] = summary["市值"] / total_nav
+    summary["占比"] = summary["市值"] / total_nav * 100
     st.dataframe(summary,
         column_config={
             "市值": st.column_config.NumberColumn("市值 USD", format="$%,.0f"),
