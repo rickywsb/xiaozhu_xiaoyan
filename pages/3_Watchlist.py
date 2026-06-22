@@ -17,6 +17,7 @@ from core.daily_momentum import (
     DEFAULT_DECAY, DEFAULT_WINDOW, PERIODS,
     score_ticker_list,
 )
+from core.github_storage import sync_to_github
 
 # ─── 工具 ─────────────────────────────────────────────────────────────────────
 SNAPSHOT_DIR = config.DATA_DIR / "snapshots"
@@ -35,6 +36,10 @@ def _save_watchlist(tickers: list[str]):
         json.dumps({"watchlist": tickers, "last_modified": date.today().isoformat()},
                    ensure_ascii=False, indent=2),
         encoding="utf-8",
+    )
+    sync_to_github(
+        config.WATCHLIST_PATH, "data/watchlist.json",
+        "feat: update watchlist via UI",
     )
 
 

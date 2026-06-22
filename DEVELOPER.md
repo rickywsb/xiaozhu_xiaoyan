@@ -1,8 +1,8 @@
 # 小猪小眼基金公司 · 股票分析软件 — 开发者文档
 
-> **版本**: v0.5  
+> **版本**: v0.6  
 > **日期**: 2026-06-21  
-> **状态**: 🔨 Phase 4 开发中
+> **状态**: 🔨 Phase 5 完成
 
 ---
 
@@ -304,12 +304,37 @@ portfolio.json → [聚合] → DataFrame → [merge price_cache] → 展示表�
   - **✏️ 编辑列表** Tab：`st.data_editor` 增删 ticker + 一键把全部持仓加入 Watch List
 - [x] 30 分钟 `st.cache_data` 缓存，与 Phase 3 和谐统一参数
 
-### Phase 5：打磨
+### Phase 5：云端持久化 ✅ 已完成 (2026-06-21)
 
-- [ ] 侧边栏全局参数控制（universe、top_n、decay 等）
-- [ ] 深色主题 / 自定义 CSS
-- [ ] 本地定时任务（launchd / cron）自动每日更新
-- [ ] 持仓编辑 UI 写回 `portfolio.json`（不再需要手动编辑 JSON）
+**目标**：Streamlit Cloud 文件系统临时，用户编辑持仓后自动写回 GitHub repo，实现跨会话持久化。
+
+**方案**：GitHub Contents API（无需外部数据库，利用已有 git repo）
+
+- [x] `core/github_storage.py` — GitHub Contents API 封装
+  - `get_file_sha(remote_path, token, repo)` → 获取文件 SHA（PUT 时必须提供）
+  - `save_json_to_github(local_path, remote_path, commit_msg, *, token, repo)` → 写回 GitHub
+  - `sync_to_github(local_path, remote_path, commit_msg)` → 便捷封装，自动读 `st.secrets`
+  - 本地运行时无 token → 静默跳过，仅保存本地（不影响开发体验）
+- [x] `pages/1_Portfolio.py` — 保存按钮调用 `sync_to_github`，结果显示 GitHub 同步状态
+- [x] `pages/3_Watchlist.py` — `_save_watchlist` 自动同步 `data/watchlist.json`
+- [x] `requirements.txt` — 添加 `requests>=2.31`
+- [x] `runtime.txt` — 改为 `python-3.11` 格式
+- [x] 修复所有文件的 `from __future__ import annotations`（Python 3.14 兼容）
+
+**Streamlit Cloud 配置步骤**：
+```
+App Settings → Secrets → 添加：
+GITHUB_TOKEN = "ghp_xxxxxxxxxxxxxxxxxxxx"
+GITHUB_REPO  = "rickywsb/xiaozhu_xiaoyan"
+```
+
+**数据流**：
+```
+用户点击「💾 保存」
+  → 写本地 data/portfolio.json
+  → GitHub API PUT /repos/{repo}/contents/data/portfolio.json
+  → 自动 commit → Streamlit Cloud 检测 push → 重部署（~1 min）
+```
 
 ---
 

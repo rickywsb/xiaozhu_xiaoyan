@@ -13,6 +13,7 @@ import streamlit as st
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import config
 from core.price_updater import load_cache, update_all_prices
+from core.github_storage import sync_to_github
 
 SECTORS    = ["光", "存", "配置", "半导体", "其他", "期权", "现金"]
 CURRENCIES = ["USD", "CASH", "TWD", "GBp", "KRW", "HKD", "EUR", "CNY"]
@@ -281,16 +282,30 @@ with tab_edit:
         if st.button("💾 保存持仓配置", use_container_width=True):
             _save_portfolio(portfolio, edited_pos, edited_manual)
             st.cache_data.clear()
-            st.success("✅ 持仓配置已保存！切换到「📊 持仓概览」查看。")
+            ok, msg = sync_to_github(
+                config.PORTFOLIO_PATH, "data/portfolio.json",
+                "feat: update portfolio via UI",
+            )
+            if ok is True:
+                st.success(f"✅ 持仓已保存并同步到 GitHub！")
+            elif ok is False:
+                st.warning(f"✅ 本地已保存，GitHub 同步失败：{msg}")
+            else:
+                st.success("✅ 持仓配置已保存！切换到「📊 持仓概览」查看。")
             st.rerun()
     with btn_r:
         if st.button("🚀 保存 + 获取最新价格", type="primary", use_container_width=True):
             updated = _save_portfolio(portfolio, edited_pos, edited_manual)
             st.cache_data.clear()
+            ok, msg = sync_to_github(
+                config.PORTFOLIO_PATH, "data/portfolio.json",
+                "feat: update portfolio via UI",
+            )
             with st.spinner("正在获取最新价格…（约 20-30 秒）"):
                 cache = update_all_prices(updated)
             if cache.get("failed"):
                 st.warning(f"已更新，⚠️ 失败: {', '.join(cache['failed'])}")
             else:
-                st.success(f"✅ 持仓已保存，{len(cache['prices'])} 只价格全部更新！")
+                label = "并同步到 GitHub" if ok is True else ""
+                st.success(f"✅ 持仓已保存{label}，{len(cache['prices'])} 只价格全部更新！")
             st.rerun()
