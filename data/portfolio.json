@@ -248,7 +248,7 @@
         {
           "display": "SK Hynix",
           "yf_ticker": "000660.KS",
-          "shares": 3.0,
+          "shares": 4.0,
           "sector": "存",
           "native_currency": "KRW",
           "note": "韩国交易所"
@@ -293,5 +293,5 @@
     "MARVEL CALL": 17750.0,
     "NOK Call 2026 12": 2025.0
   },
-  "last_modified": "2026-06-22"
+  "last_modified": "2026-06-23"
 }
