@@ -144,7 +144,7 @@
         {
           "display": "SIVE",
           "yf_ticker": "SIVEF",
-          "shares": 300.0,
+          "shares": 800.0,
           "sector": "光",
           "native_currency": "USD",
           "note": "同SIVEF底层资产"
@@ -272,7 +272,7 @@
         {
           "display": "Cash",
           "yf_ticker": "CASH",
-          "shares": 40206.0,
+          "shares": 29291.0,
           "sector": "现金",
           "native_currency": "USD",
           "note": "None"
@@ -284,6 +284,14 @@
           "sector": "存",
           "native_currency": "USD",
           "note": "None"
+        },
+        {
+          "display": "费城半导体",
+          "yf_ticker": "SOXX",
+          "shares": 11.0,
+          "sector": "半导体",
+          "native_currency": "USD",
+          "note": "600"
         }
       ]
     }
