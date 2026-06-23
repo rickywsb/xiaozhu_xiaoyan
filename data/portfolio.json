@@ -16,7 +16,7 @@
         {
           "display": "MU",
           "yf_ticker": "MU",
-          "shares": 39.32,
+          "shares": 41.32,
           "sector": "存",
           "native_currency": "USD",
           "note": "33+6.32"
@@ -48,7 +48,7 @@
         {
           "display": "COHR",
           "yf_ticker": "COHR",
-          "shares": 27.5,
+          "shares": 31.5,
           "sector": "光",
           "native_currency": "USD",
           "note": ""
@@ -272,7 +272,7 @@
         {
           "display": "Cash",
           "yf_ticker": "CASH",
-          "shares": 43900.0,
+          "shares": 40206.0,
           "sector": "现金",
           "native_currency": "USD",
           "note": "None"
