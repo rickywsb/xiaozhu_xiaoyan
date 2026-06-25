@@ -16,7 +16,7 @@
         {
           "display": "MU",
           "yf_ticker": "MU",
-          "shares": 41.32,
+          "shares": 42.32,
           "sector": "存",
           "native_currency": "USD",
           "note": "33+6.32"
@@ -80,7 +80,7 @@
         {
           "display": "MARVEL",
           "yf_ticker": "MRVL",
-          "shares": 45.0,
+          "shares": 55.0,
           "sector": "光",
           "native_currency": "USD",
           "note": "Marvell, 32+3+10"
@@ -232,7 +232,7 @@
         {
           "display": "DRAM",
           "yf_ticker": "DRAM",
-          "shares": 66.0,
+          "shares": 70.0,
           "sector": "存",
           "native_currency": "USD",
           "note": "17+9+40"
@@ -292,14 +292,23 @@
           "sector": "半导体",
           "native_currency": "USD",
           "note": "600"
+        },
+        {
+          "display": "QCOM",
+          "yf_ticker": "QCOM",
+          "shares": 10.0,
+          "sector": "半导体",
+          "native_currency": "USD",
+          "note": "None"
         }
       ]
     }
   ],
   "manual_values": {
-    "GLW Call": 7680.0,
-    "MARVEL CALL": 15205.0,
-    "NOK Call 2026 12": 1725.0
+    "GLW Call": 8768.43,
+    "MARVEL CALL": 14850.0,
+    "NOK Call 2026 12": 1775.0,
+    "DRAM Call 2027 6": 2925.0
   },
-  "last_modified": "2026-06-23"
+  "last_modified": "2026-06-25"
 }
