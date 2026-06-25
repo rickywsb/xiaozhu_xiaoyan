@@ -16,7 +16,7 @@
         {
           "display": "MU",
           "yf_ticker": "MU",
-          "shares": 42.32,
+          "shares": 48.32,
           "sector": "存",
           "native_currency": "USD",
           "note": "33+6.32"
@@ -26,14 +26,6 @@
           "yf_ticker": "LITE",
           "shares": 32.0,
           "sector": "光",
-          "native_currency": "USD",
-          "note": ""
-        },
-        {
-          "display": "GOOGL",
-          "yf_ticker": "GOOGL",
-          "shares": 18.0,
-          "sector": "配置",
           "native_currency": "USD",
           "note": ""
         },
@@ -80,7 +72,7 @@
         {
           "display": "MARVEL",
           "yf_ticker": "MRVL",
-          "shares": 55.0,
+          "shares": 61.0,
           "sector": "光",
           "native_currency": "USD",
           "note": "Marvell, 32+3+10"
@@ -118,14 +110,6 @@
           "note": "350+139+165"
         },
         {
-          "display": "AXTI",
-          "yf_ticker": "AXTI",
-          "shares": 75.0,
-          "sector": "光",
-          "native_currency": "USD",
-          "note": ""
-        },
-        {
           "display": "SNDK",
           "yf_ticker": "SNDK",
           "shares": 5.0,
@@ -144,7 +128,7 @@
         {
           "display": "SIVE",
           "yf_ticker": "SIVEF",
-          "shares": 800.0,
+          "shares": 1200.0,
           "sector": "光",
           "native_currency": "USD",
           "note": "同SIVEF底层资产"
@@ -190,14 +174,6 @@
           "note": ""
         },
         {
-          "display": "SLOIY",
-          "yf_ticker": "SLOIY",
-          "shares": 20.0,
-          "sector": "光",
-          "native_currency": "USD",
-          "note": "OTC ADR"
-        },
-        {
           "display": "SLOIF",
           "yf_ticker": "SLOIF",
           "shares": 30.0,
@@ -238,14 +214,6 @@
           "note": "17+9+40"
         },
         {
-          "display": "NVTS",
-          "yf_ticker": "NVTS",
-          "shares": 200.0,
-          "sector": "其他",
-          "native_currency": "USD",
-          "note": "Navitas"
-        },
-        {
           "display": "SK Hynix",
           "yf_ticker": "000660.KS",
           "shares": 4.0,
@@ -260,14 +228,6 @@
           "sector": "存",
           "native_currency": "HKD",
           "note": "南方两倍做多海力士，港股"
-        },
-        {
-          "display": "XFAB",
-          "yf_ticker": "XFAB.PA",
-          "shares": 130.0,
-          "sector": "半导体",
-          "native_currency": "EUR",
-          "note": "巴黎交易所"
         },
         {
           "display": "Cash",
@@ -300,15 +260,31 @@
           "sector": "半导体",
           "native_currency": "USD",
           "note": "None"
+        },
+        {
+          "display": "MUU",
+          "yf_ticker": "MUU",
+          "shares": 3.0,
+          "sector": "存",
+          "native_currency": "USD",
+          "note": "None"
+        },
+        {
+          "display": "三倍费城半导体",
+          "yf_ticker": "SOXL",
+          "shares": 8.0,
+          "sector": "半导体",
+          "native_currency": "USD",
+          "note": "None"
         }
       ]
     }
   ],
   "manual_values": {
-    "GLW Call": 8768.43,
-    "MARVEL CALL": 14850.0,
-    "NOK Call 2026 12": 1775.0,
-    "DRAM Call 2027 6": 2925.0
+    "GLW Call": 10700.0,
+    "MARVEL CALL": 15270.0,
+    "NOK Call 2026 12": 1800.0,
+    "DRAM Call 2027 6": 3544.0
   },
   "last_modified": "2026-06-25"
 }
