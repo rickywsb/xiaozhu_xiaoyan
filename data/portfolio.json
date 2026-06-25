@@ -272,10 +272,10 @@
         {
           "display": "Cash",
           "yf_ticker": "CASH",
-          "shares": 29291.0,
+          "shares": 34212.0,
           "sector": "现金",
           "native_currency": "USD",
-          "note": "None"
+          "note": "岳入金10000"
         },
         {
           "display": "2倍闪迪",
