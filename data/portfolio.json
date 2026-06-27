@@ -24,7 +24,7 @@
         {
           "display": "LITE",
           "yf_ticker": "LITE",
-          "shares": 32.0,
+          "shares": 37.0,
           "sector": "光",
           "native_currency": "USD",
           "note": ""
@@ -40,7 +40,7 @@
         {
           "display": "COHR",
           "yf_ticker": "COHR",
-          "shares": 31.5,
+          "shares": 41.5,
           "sector": "光",
           "native_currency": "USD",
           "note": ""
@@ -64,7 +64,7 @@
         {
           "display": "GLW",
           "yf_ticker": "GLW",
-          "shares": 40.0,
+          "shares": 50.0,
           "sector": "光",
           "native_currency": "USD",
           "note": ""
@@ -128,7 +128,7 @@
         {
           "display": "SIVE",
           "yf_ticker": "SIVEF",
-          "shares": 1200.0,
+          "shares": 700.0,
           "sector": "光",
           "native_currency": "USD",
           "note": "同SIVEF底层资产"
@@ -136,7 +136,7 @@
         {
           "display": "MSFT",
           "yf_ticker": "MSFT",
-          "shares": 145.0915,
+          "shares": 115.8555,
           "sector": "配置",
           "native_currency": "USD",
           "note": ""
@@ -208,7 +208,7 @@
         {
           "display": "DRAM",
           "yf_ticker": "DRAM",
-          "shares": 70.0,
+          "shares": 130.0,
           "sector": "存",
           "native_currency": "USD",
           "note": "17+9+40"
@@ -216,7 +216,7 @@
         {
           "display": "SK Hynix",
           "yf_ticker": "000660.KS",
-          "shares": 4.0,
+          "shares": 6.0,
           "sector": "存",
           "native_currency": "KRW",
           "note": "韩国交易所"
@@ -240,7 +240,7 @@
         {
           "display": "2倍闪迪",
           "yf_ticker": "SNXX",
-          "shares": 50.0,
+          "shares": 57.0,
           "sector": "存",
           "native_currency": "USD",
           "note": "None"
@@ -248,7 +248,7 @@
         {
           "display": "费城半导体",
           "yf_ticker": "SOXX",
-          "shares": 11.0,
+          "shares": 17.0,
           "sector": "半导体",
           "native_currency": "USD",
           "note": "600"
@@ -276,15 +276,24 @@
           "sector": "半导体",
           "native_currency": "USD",
           "note": "None"
+        },
+        {
+          "display": "Seagate",
+          "yf_ticker": "STX",
+          "shares": 1.0,
+          "sector": "存",
+          "native_currency": "USD",
+          "note": "None"
         }
       ]
     }
   ],
   "manual_values": {
-    "GLW Call": 10700.0,
-    "MARVEL CALL": 15270.0,
-    "NOK Call 2026 12": 1800.0,
-    "DRAM Call 2027 6": 3544.0
+    "GLW Call": 10148.58,
+    "MARVEL CALL": 13900.0,
+    "NOK Call 2026 12": 1500.0,
+    "DRAM Call 2027 6": 3536.0,
+    "DRAM CALL 55 2026 6": 3050.0
   },
-  "last_modified": "2026-06-25"
+  "last_modified": "2026-06-27"
 }
