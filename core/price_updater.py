@@ -1,4 +1,4 @@
-"""core/price_updater.py — 抓取最新收盘价并换算为 USD"""
+"""core/price_updater.py — 抓取最新价格（实时/收盘）并换算为 USD"""
 
 import json
 import sys
@@ -93,6 +93,28 @@ def _batch_fetch(tickers: list[str]) -> dict[str, float]:
     return out
 
 
+def _fetch_live_map(tickers: list[str]) -> dict[str, float]:
+    """批量获取实时价 fast_info['lastPrice']（原始货币）。
+    盘中 → 当前价；收盘后 → 当日收盘价。解决美股盘中只能拿到昨收的问题。
+    返回 {ticker: price}；失败的不在返回值中。
+    """
+    out: dict[str, float] = {}
+    if not tickers:
+        return out
+    try:
+        tobj = yf.Tickers(" ".join(tickers))
+    except Exception:
+        return out
+    for t in tickers:
+        try:
+            v = tobj.tickers[t].fast_info["lastPrice"]
+            if v is not None and float(v) > 0:
+                out[t] = float(v)
+        except Exception:
+            pass
+    return out
+
+
 def to_usd(raw: float, yf_ticker: str, fx_rates: dict[str, float]) -> float:
     """将原始价格换算为 USD。"""
     currency = _CURRENCY_MAP.get(yf_ticker)
@@ -134,12 +156,18 @@ def update_all_prices(portfolio: dict) -> dict:
     for t in cash_tickers:
         prices[t] = 1.0
 
-    # ① 批量下载（一个请求）
-    raw_map = _batch_fetch(real_tickers)
+    # ① 实时价优先（盘中=当前价，收盘后=今日收盘）
+    live_map = _fetch_live_map(real_tickers)
 
-    # ② 对批量未命中的 ticker 逐个重试回退
+    # ② 实时价缺失的，用批量历史收盘兑底（一个请求）
+    missing = [t for t in real_tickers if t not in live_map]
+    close_map = _batch_fetch(missing) if missing else {}
+
+    # ③ 仍缺失的逐个重试兑底
     for ticker in real_tickers:
-        raw = raw_map.get(ticker)
+        raw = live_map.get(ticker)
+        if raw is None:
+            raw = close_map.get(ticker)
         if raw is None:
             raw = fetch_price(ticker)
         if raw is not None:
