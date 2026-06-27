@@ -127,11 +127,11 @@
         },
         {
           "display": "SIVE",
-          "yf_ticker": "SIVEF",
+          "yf_ticker": "SIVE.ST",
           "shares": 700.0,
           "sector": "光",
-          "native_currency": "USD",
-          "note": "同SIVEF底层资产"
+          "native_currency": "SEK",
+          "note": "瑞典股市 Sivers，SEK 计价，同SIVEF底层资产"
         },
         {
           "display": "MSFT",

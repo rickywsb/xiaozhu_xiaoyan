@@ -2,6 +2,7 @@
 
 import json
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -19,22 +20,77 @@ _CURRENCY_MAP: dict[str, str] = {
     "000660.KS": "KRW",
     "7709.HK":  "HKD",
     "XFAB.PA":  "EUR",
+    "SIVE.ST":  "SEK",
 }
 
 
-def fetch_price(yf_ticker: str) -> float | None:
-    """获取单只股票最新收盘价（原始货币）。
+def _extract_last_close(hist) -> float | None:
+    """从 yfinance 历史 DataFrame 取最后一个有效收盘价。"""
+    try:
+        if hist is None or hist.empty:
+            return None
+        closes = hist["Close"].dropna()
+        if len(closes):
+            return float(closes.iloc[-1])
+    except Exception:
+        pass
+    return None
+
+
+def fetch_price(yf_ticker: str, retries: int = 2) -> float | None:
+    """获取单只股票最新收盘价（原始货币），带重试。
     特殊 ticker：CASH → 固定返回 1.0（美元现金，shares = 金额）。
     """
     if yf_ticker.upper() == config.CASH_TICKER:
         return 1.0
-    try:
-        hist = yf.Ticker(yf_ticker).history(period="5d")
-        if not hist.empty:
-            return float(hist["Close"].iloc[-1])
-    except Exception:
-        pass
+    for attempt in range(retries + 1):
+        try:
+            hist = yf.Ticker(yf_ticker).history(period="5d")
+            price = _extract_last_close(hist)
+            if price is not None:
+                return price
+        except Exception:
+            pass
+        if attempt < retries:
+            time.sleep(0.5 * (attempt + 1))  # 退避，缓解限流
     return None
+
+
+def _batch_fetch(tickers: list[str]) -> dict[str, float]:
+    """一次性批量下载所有 ticker（原始货币收盘价）。
+    返回 {ticker: close}；失败的 ticker 不在返回值中。
+    一个请求替代 N 个请求，大幅减少 Yahoo 限流（HTTP 429）。
+    """
+    out: dict[str, float] = {}
+    if not tickers:
+        return out
+    try:
+        data = yf.download(
+            tickers, period="5d", interval="1d",
+            group_by="ticker", auto_adjust=False,
+            threads=True, progress=False,
+        )
+    except Exception:
+        return out
+    if data is None or data.empty:
+        return out
+
+    # 单 ticker 时列不是 MultiIndex
+    if len(tickers) == 1:
+        price = _extract_last_close(data)
+        if price is not None:
+            out[tickers[0]] = price
+        return out
+
+    for t in tickers:
+        try:
+            sub = data[t]
+        except Exception:
+            continue
+        price = _extract_last_close(sub)
+        if price is not None:
+            out[t] = price
+    return out
 
 
 def to_usd(raw: float, yf_ticker: str, fx_rates: dict[str, float]) -> float:
@@ -68,11 +124,24 @@ def update_all_prices(portfolio: dict) -> dict:
         for pos in account.get("positions", []):
             tickers.add(pos["yf_ticker"])
 
+    # 现金单独处理（固定 1.0），其余批量抓取
+    cash_tickers = {t for t in tickers if t.upper() == config.CASH_TICKER}
+    real_tickers = sorted(tickers - cash_tickers)
+
     prices: dict[str, float] = {}
     failed: list[str] = []
 
-    for ticker in sorted(tickers):
-        raw = fetch_price(ticker)
+    for t in cash_tickers:
+        prices[t] = 1.0
+
+    # ① 批量下载（一个请求）
+    raw_map = _batch_fetch(real_tickers)
+
+    # ② 对批量未命中的 ticker 逐个重试回退
+    for ticker in real_tickers:
+        raw = raw_map.get(ticker)
+        if raw is None:
+            raw = fetch_price(ticker)
         if raw is not None:
             prices[ticker] = round(to_usd(raw, ticker, fx_rates), 2)
         else:

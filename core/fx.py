@@ -18,6 +18,7 @@ _FX_PAIRS: dict[str, str] = {
     "EUR": "EURUSD=X",
     "KRW": "KRWUSD=X",
     "HKD": "HKDUSD=X",
+    "SEK": "SEKUSD=X",
 }
 
 
