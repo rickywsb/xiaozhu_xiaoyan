@@ -16,7 +16,7 @@
         {
           "display": "MU",
           "yf_ticker": "MU",
-          "shares": 48.32,
+          "shares": 53.32,
           "sector": "存",
           "native_currency": "USD",
           "note": "33+6.32"
@@ -112,7 +112,7 @@
         {
           "display": "SNDK",
           "yf_ticker": "SNDK",
-          "shares": 5.0,
+          "shares": 7.0,
           "sector": "存",
           "native_currency": "USD",
           "note": ""
@@ -124,14 +124,6 @@
           "sector": "光",
           "native_currency": "GBp",
           "note": "伦敦，便士计价"
-        },
-        {
-          "display": "SIVE",
-          "yf_ticker": "SIVE.ST",
-          "shares": 700.0,
-          "sector": "光",
-          "native_currency": "SEK",
-          "note": "瑞典股市 Sivers，SEK 计价，同SIVEF底层资产"
         },
         {
           "display": "MSFT",
@@ -216,7 +208,7 @@
         {
           "display": "SK Hynix",
           "yf_ticker": "000660.KS",
-          "shares": 6.0,
+          "shares": 8.0,
           "sector": "存",
           "native_currency": "KRW",
           "note": "韩国交易所"
@@ -289,11 +281,11 @@
     }
   ],
   "manual_values": {
-    "GLW Call": 10148.58,
-    "MARVEL CALL": 13900.0,
-    "NOK Call 2026 12": 1500.0,
+    "GLW Call": 13185.0,
+    "MARVEL CALL": 14900.0,
+    "NOK Call 2026 12": 1465.0,
     "DRAM Call 2027 6": 3536.0,
-    "DRAM CALL 55 2026 6": 3050.0
+    "2*DRAM CALL 55 2026 6": 6200.0
   },
-  "last_modified": "2026-06-27"
+  "last_modified": "2026-06-29"
 }
