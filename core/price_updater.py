@@ -11,7 +11,6 @@ import yfinance as yf
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import config
 from core.fx import get_fx_rates
-
 # 原始货币映射（yf_ticker → 原始货币代码）
 # GBp = 英国便士（需 ÷100 转 GBP 再乘汇率）
 _CURRENCY_MAP: dict[str, str] = {
@@ -181,6 +180,74 @@ def update_all_prices(portfolio: dict) -> dict:
         "prices": prices,
         "failed": failed,
     }
+
+    # ④ 期权：抓价 + Black-Scholes 希腊字母 + 手动覆盖
+    from core.options import fetch_option, resolve_option_value
+    from core.snapshots import save_snapshot
+
+    options_out: dict[str, dict] = {}
+    for o in portfolio.get("options", []):
+        contract = str(o.get("contract", "")).strip()
+        if not contract:
+            continue
+        contracts = float(o.get("contracts", 1) or 1)
+        manual = o.get("manual_mark")
+        try:
+            q = fetch_option(contract)
+        except Exception:
+            q = None
+        r = resolve_option_value(q, contracts=contracts, manual_mark=manual)
+        options_out[contract] = {
+            "display":          o.get("display", contract),
+            "sector":           o.get("sector", "期权"),
+            "contracts":        contracts,
+            "mark":             r["mark"],
+            "value":            r["value"],
+            "source":           r["source"],
+            "flagged":          r["flagged"],
+            "deviation":        r["deviation"],
+            "fetched_mark":     r["fetched_mark"],
+            "iv":               q.iv if q else None,
+            "delta":            q.delta if q else None,
+            "gamma":            q.gamma if q else None,
+            "theta":            q.theta if q else None,
+            "vega":             q.vega if q else None,
+            "underlying_price": q.underlying_price if q else None,
+            "last_price":       q.last_price if q else None,
+            "bid":              q.bid if q else None,
+            "ask":              q.ask if q else None,
+            "days_to_expiry":   q.days_to_expiry if q else None,
+        }
+    cache["options"] = options_out
+
+    # ⑤ 归档当日全持仓快照（股票 + 期权），供日间对比
+    snap_positions: dict[str, dict] = {}
+    for account in portfolio.get("accounts", []):
+        for pos in account.get("positions", []):
+            t = pos["yf_ticker"]
+            p = prices.get(t)
+            sh = pos.get("shares")
+            snap_positions[t] = {
+                "price": p,
+                "value": round(p * sh, 2) if (p and sh) else None,
+                "kind": "stock",
+            }
+    for contract, od in options_out.items():
+        snap_positions[contract] = {
+            "price": od["mark"],
+            "value": od["value"],
+            "kind": "option",
+            "iv": od["iv"],
+            "delta": od["delta"],
+            "gamma": od["gamma"],
+            "theta": od["theta"],
+            "vega": od["vega"],
+            "underlying_price": od["underlying_price"],
+        }
+    try:
+        save_snapshot(snap_positions)
+    except Exception:
+        pass
 
     config.PRICE_CACHE_PATH.write_text(
         json.dumps(cache, ensure_ascii=False, indent=2),

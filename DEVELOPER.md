@@ -591,9 +591,16 @@ Step 5  写 pages/1_Portfolio.py（表格 + 一键更新，先跑通逻辑）
 | MRVL 160 Call | `MRVL270617C00160000` | 1 | 170.28 | $17,028 | 100.5% | 0.88 |
 | NOK 13 Call | `NOK261218C00013000` | 5 | 2.92 | $292 | 78.3% | 0.64 |
 
-### 10.7 待办（下一步 UI 接入）
-- [ ] `pages/1_Portfolio.py`：期权行接入自动抓价 + `manual_mark` 编辑列
-- [ ] 持仓表新增「当日涨跌%」列（红绿），数据来自 `compute_changes`
-- [ ] 点击/展开持仓看明细：期权显示 greeks + 日间变化，股票显示价格变化
-- [ ] 更新价格时调用 `save_snapshot` 归档当日快照
+### 10.7 UI 接入（已完成）
+- [x] `pages/1_Portfolio.py`：期权行接入自动抓价 + `manual_mark` 编辑列
+- [x] 持仓表新增「当日涨跌%」「日变化 USD」列（来自 `compute_changes`）
+- [x] 新增「🎯 期权明细 · 希腊字母」区块：IV/Delta/Gamma/Theta/Vega + ΔIV/ΔDelta
+- [x] 更新价格时 `update_all_prices` 内部调 `save_snapshot` 归档当日快照
+- [x] 编辑页新增「🎯 期权持仓」编辑器：标的/到期/方向/行权价/张数/板块/手动价，
+      保存时 `build_occ` 自动生成合约代码
+- [x] `manual_values` 内的 6 个期权已迁移为 `options` 数组（含合约代码）
+
+> 注：`update_all_prices` 现返回的 cache 多了 `options` 段（每合约 mark/value/greeks/
+> source/flagged）；`_build_view_df(portfolio, cache)` 签名由原 `prices` 改为整个 cache。
+> 期权按各自 `sector`（光/存/半导体）计入板块饼图，不再单列「期权」类。
 

@@ -15,9 +15,12 @@ import config
 from core.price_updater import load_cache, update_all_prices
 from core.github_storage import sync_to_github
 from core.value_history import append_value, load_history, HISTORY_PATH
+from core.options import build_occ
+from core import snapshots
 
 SECTORS    = ["光", "存", "配置", "半导体", "其他", "期权", "现金"]
 CURRENCIES = ["USD", "CASH", "TWD", "GBp", "KRW", "HKD", "EUR", "CNY"]
+OPT_TYPES  = ["call", "put"]
 
 # ─── 工具函数 ──────────────────────────────────────────────────────────────────
 
@@ -48,7 +51,27 @@ def _manual_to_df(portfolio: dict) -> pd.DataFrame:
     return pd.DataFrame(rows) if rows else pd.DataFrame(columns=["名称", "市值 USD"])
 
 
-def _save_portfolio(portfolio: dict, pos_df: pd.DataFrame, manual_df: pd.DataFrame) -> dict:
+def _options_to_df(portfolio: dict) -> pd.DataFrame:
+    rows = [
+        {
+            "显示名":  o.get("display", o.get("contract", "")),
+            "标的":    o.get("underlying", ""),
+            "到期":    o.get("expiry", ""),
+            "方向":    o.get("type", "call"),
+            "行权价":  float(o.get("strike", 0) or 0),
+            "张数":    float(o.get("contracts", 1) or 1),
+            "板块":    o.get("sector", "期权"),
+            "手动价":  o.get("manual_mark"),
+            "备注":    o.get("note", ""),
+        }
+        for o in portfolio.get("options", [])
+    ]
+    cols = ["显示名", "标的", "到期", "方向", "行权价", "张数", "板块", "手动价", "备注"]
+    return pd.DataFrame(rows) if rows else pd.DataFrame(columns=cols)
+
+
+def _save_portfolio(portfolio: dict, pos_df: pd.DataFrame,
+                    manual_df: pd.DataFrame, options_df: pd.DataFrame | None = None) -> dict:
     valid = pos_df.dropna(subset=["YF Ticker"]).copy()
     valid = valid[valid["YF Ticker"].astype(str).str.strip() != ""]
     positions = []
@@ -70,6 +93,36 @@ def _save_portfolio(portfolio: dict, pos_df: pd.DataFrame, manual_df: pd.DataFra
             manual_values[name] = float(r["市值 USD"]) if pd.notna(r.get("市值 USD")) else 0.0
     portfolio["accounts"][0]["positions"] = positions
     portfolio["manual_values"] = manual_values
+
+    if options_df is not None:
+        options = []
+        for _, r in options_df.iterrows():
+            underlying = str(r.get("标的", "")).strip().upper()
+            expiry     = str(r.get("到期", "")).strip()
+            otype      = str(r.get("方向", "call")).strip().lower() or "call"
+            if not underlying or not expiry:
+                continue
+            try:
+                strike = float(r.get("行权价", 0) or 0)
+                contract = build_occ(underlying, expiry, otype, strike)
+            except Exception:
+                continue
+            display = str(r.get("显示名", "")).strip()
+            manual_mark = r.get("手动价")
+            options.append({
+                "display":     display if display else f"{underlying} {strike:g} {otype.title()}",
+                "underlying":  underlying,
+                "expiry":      expiry,
+                "type":        otype,
+                "strike":      strike,
+                "contract":    contract,
+                "contracts":   float(r["张数"]) if pd.notna(r.get("张数")) else 1.0,
+                "sector":      str(r.get("板块", "期权")).strip() or "期权",
+                "manual_mark": float(manual_mark) if pd.notna(manual_mark) else None,
+                "note":        str(r.get("备注", "")).strip(),
+            })
+        portfolio["options"] = options
+
     portfolio["last_modified"] = datetime.now().strftime("%Y-%m-%d")
     config.PORTFOLIO_PATH.write_text(
         json.dumps(portfolio, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -77,7 +130,9 @@ def _save_portfolio(portfolio: dict, pos_df: pd.DataFrame, manual_df: pd.DataFra
     return portfolio
 
 
-def _build_view_df(portfolio: dict, prices: dict) -> tuple[pd.DataFrame, float]:
+def _build_view_df(portfolio: dict, cache: dict) -> tuple[pd.DataFrame, float]:
+    prices  = cache.get("prices", {}) if cache else {}
+    options = cache.get("options", {}) if cache else {}
     rows = []
     for account in portfolio.get("accounts", []):
         for pos in account.get("positions", []):
@@ -85,6 +140,7 @@ def _build_view_df(portfolio: dict, prices: dict) -> tuple[pd.DataFrame, float]:
             shares  = pos.get("shares")
             mkt_val = round(price * shares, 2) if (price and shares) else None
             rows.append({
+                "_key":     pos["yf_ticker"],
                 "股票":     pos["display"],
                 "板块":     pos["sector"],
                 "持股数":   shares,
@@ -92,16 +148,58 @@ def _build_view_df(portfolio: dict, prices: dict) -> tuple[pd.DataFrame, float]:
                 "市值 USD": mkt_val,
                 "货币":     pos.get("native_currency", "USD"),
                 "备注":     pos.get("note", ""),
+                "期权":     False,
             })
+    # 期权（自动抓价 + 手动覆盖）
+    for contract, od in options.items():
+        src_tag = "手动" if od.get("source") == "manual" else "抓取"
+        note = f"期权·{src_tag}"
+        if od.get("flagged"):
+            note += " ⚠偏移"
+        rows.append({
+            "_key":     contract,
+            "股票":     od.get("display", contract),
+            "板块":     od.get("sector", "期权"),
+            "持股数":   od.get("contracts"),
+            "现价 USD": od.get("mark"),
+            "市值 USD": od.get("value"),
+            "货币":     "USD",
+            "备注":     note,
+            "期权":     True,
+        })
+    # 纯手动价值（非期权）
     for name, val in portfolio.get("manual_values", {}).items():
         rows.append({
-            "股票": name, "板块": "期权",
+            "_key": name, "股票": name, "板块": "期权",
             "持股数": None, "现价 USD": None, "市值 USD": float(val),
-            "货币": "USD", "备注": "手动",
+            "货币": "USD", "备注": "手动", "期权": True,
         })
+
     df = pd.DataFrame(rows)
     total = df["市值 USD"].sum(skipna=True)
     df["占比"] = df["市值 USD"].apply(lambda v: v / total * 100 if (pd.notna(v) and total > 0) else None)
+
+    # 与上一交易日快照对比 → 当日涨跌
+    prior = snapshots.latest_prior_snapshot()
+    prior_pos = (prior or {}).get("positions", {})
+
+    def _day_pct(row):
+        old = prior_pos.get(row["_key"], {})
+        op, np_ = old.get("price"), row["现价 USD"]
+        if isinstance(op, (int, float)) and isinstance(np_, (int, float)) and op:
+            return (np_ - op) / op * 100
+        return None
+
+    def _day_val(row):
+        old = prior_pos.get(row["_key"], {})
+        ov, nv = old.get("value"), row["市值 USD"]
+        if isinstance(ov, (int, float)) and isinstance(nv, (int, float)):
+            return nv - ov
+        return None
+
+    df["涨跌%"]     = df.apply(_day_pct, axis=1)
+    df["日变化 USD"] = df.apply(_day_val, axis=1)
+
     df = df.sort_values("市值 USD", ascending=False, na_position="last").reset_index(drop=True)
     return df, float(total)
 
@@ -134,7 +232,7 @@ with col_btn:
             st.success(f"✅ {len(cache['prices'])} 只全部更新成功")
         # 记录当日总净值到历史
         try:
-            _, _total_nav = _build_view_df(portfolio, cache["prices"])
+            _, _total_nav = _build_view_df(portfolio, cache)
             append_value(_total_nav)
             sync_to_github(
                 HISTORY_PATH, "data/portfolio_value_history.csv",
@@ -154,7 +252,7 @@ with tab_view:
         st.info("👆 点击「🔄 一键更新价格」获取当前行情后，持仓数据将自动显示。")
         st.stop()
 
-    df, total_nav = _build_view_df(portfolio, cache["prices"])
+    df, total_nav = _build_view_df(portfolio, cache)
 
     k1, k2, k3, k4 = st.columns(4)
     k1.metric("📊 总净值 (USD)", f"${total_nav:,.0f}")
@@ -172,10 +270,12 @@ with tab_view:
     sel = st.selectbox("筛选板块", all_sectors, label_visibility="collapsed")
     disp = df if sel == "全部" else df[df["板块"] == sel]
     st.dataframe(
-        disp[["股票", "板块", "持股数", "现价 USD", "市值 USD", "占比", "货币", "备注"]],
+        disp[["股票", "板块", "持股数", "现价 USD", "市值 USD", "涨跌%", "日变化 USD", "占比", "货币", "备注"]],
         column_config={
             "现价 USD": st.column_config.NumberColumn("现价 USD", format="$%.2f"),
             "市值 USD": st.column_config.NumberColumn("市值 USD", format="$%,.0f"),
+            "涨跌%":    st.column_config.NumberColumn("当日涨跌%", format="%+.2f%%"),
+            "日变化 USD": st.column_config.NumberColumn("日变化 USD", format="$%+,.0f"),
             "占比":     st.column_config.ProgressColumn(
                 "占比", format="%.1f%%", min_value=0,
                 max_value=float(disp["占比"].max(skipna=True)),  # already in %
@@ -184,6 +284,61 @@ with tab_view:
         },
         use_container_width=True, hide_index=True, height=500,
     )
+    if snapshots.latest_prior_snapshot() is None:
+        st.caption("ℹ️ 当日涨跌需至少两天快照对比；今天是首次记录，明天更新后即可显示。")
+
+    # ── 期权明细 · 希腊字母 ──────────────────────────────────────────
+    opt_cache = cache.get("options", {})
+    if opt_cache:
+        st.divider()
+        st.subheader("🎯 期权明细 · 希腊字母")
+        prior_pos = (snapshots.latest_prior_snapshot() or {}).get("positions", {})
+        opt_rows = []
+        for contract, od in opt_cache.items():
+            old = prior_pos.get(contract, {})
+            iv_prev = old.get("iv")
+            dlt_prev = old.get("delta")
+            iv_now = od.get("iv")
+            opt_rows.append({
+                "期权":     od.get("display", contract),
+                "板块":     od.get("sector", "期权"),
+                "张数":     od.get("contracts"),
+                "标的价":   od.get("underlying_price"),
+                "标价/股":  od.get("mark"),
+                "来源":     "手动" if od.get("source") == "manual" else "抓取",
+                "市值":     od.get("value"),
+                "IV":       iv_now * 100 if isinstance(iv_now, (int, float)) else None,
+                "ΔIV":      (iv_now - iv_prev) * 100 if (isinstance(iv_now, (int, float)) and isinstance(iv_prev, (int, float))) else None,
+                "Delta":    od.get("delta"),
+                "ΔDelta":   (od.get("delta") - dlt_prev) if (isinstance(od.get("delta"), (int, float)) and isinstance(dlt_prev, (int, float))) else None,
+                "Gamma":    od.get("gamma"),
+                "Theta/日": od.get("theta"),
+                "Vega":     od.get("vega"),
+                "到期天数": od.get("days_to_expiry"),
+                "偏移提示": "⚠ 复核" if od.get("flagged") else "",
+            })
+        opt_df = pd.DataFrame(opt_rows)
+        st.dataframe(
+            opt_df,
+            column_config={
+                "标的价":   st.column_config.NumberColumn("标的价", format="$%.2f"),
+                "标价/股":  st.column_config.NumberColumn("标价/股", format="$%.2f"),
+                "市值":     st.column_config.NumberColumn("市值 USD", format="$%,.0f"),
+                "IV":       st.column_config.NumberColumn("IV", format="%.1f%%"),
+                "ΔIV":      st.column_config.NumberColumn("ΔIV", format="%+.2f%%"),
+                "Delta":    st.column_config.NumberColumn("Delta", format="%.3f"),
+                "ΔDelta":   st.column_config.NumberColumn("ΔDelta", format="%+.3f"),
+                "Gamma":    st.column_config.NumberColumn("Gamma", format="%.5f"),
+                "Theta/日": st.column_config.NumberColumn("Theta/日", format="%.4f"),
+                "Vega":     st.column_config.NumberColumn("Vega", format="%.3f"),
+            },
+            use_container_width=True, hide_index=True,
+        )
+        st.caption(
+            "IV 由 yfinance 提供；Delta/Gamma/Theta/Vega 由 Black-Scholes 计算。"
+            "估值口径为中值 (bid+ask)/2；「来源=手动」表示已手动覆盖，"
+            "「⚠ 复核」表示抓取值与手填偏移超 15%。ΔIV/ΔDelta 为较上一交易日变化。"
+        )
 
     st.divider()
     chart_l, chart_r = st.columns(2)
@@ -373,8 +528,34 @@ with tab_edit:
         key="pos_editor",
     )
 
-    st.subheader("🗒️ 手动价值（期权 / 其他）")
-    st.caption("无法自动抓取的仓位（如期权），直接填入当前市值 (USD)。")
+    st.subheader("🎯 期权持仓（自动抓价 + 希腊字母）")
+    st.caption(
+        "• 填 **标的 / 到期 / 方向 / 行权价 / 张数**，保存后系统自动生成 OCC 合约代码并抓取实时价与希腊字母。  \n"
+        "• 估值默认用中值 (bid+ask)/2。**手动价**留空=自动；填入每股价则以手填为准（用于抓不到或与券商偏移较大时）。  \n"
+        "• 市值 = 标价 × 100 × 张数。到期日格式 `YYYY-MM-DD`（如 `2027-06-17`）。"
+    )
+    options_df = _options_to_df(portfolio)
+    edited_options = st.data_editor(
+        options_df,
+        num_rows="dynamic",
+        column_config={
+            "显示名": st.column_config.TextColumn("显示名", help="留空自动生成"),
+            "标的":   st.column_config.TextColumn("标的 ✱", required=True, help="如 GLW、MRVL、SOXX"),
+            "到期":   st.column_config.TextColumn("到期 ✱", required=True, help="YYYY-MM-DD"),
+            "方向":   st.column_config.SelectboxColumn("方向", options=OPT_TYPES),
+            "行权价": st.column_config.NumberColumn("行权价 ✱", min_value=0, format="%.2f"),
+            "张数":   st.column_config.NumberColumn("张数", min_value=0, format="%.4g"),
+            "板块":   st.column_config.SelectboxColumn("板块", options=SECTORS),
+            "手动价": st.column_config.NumberColumn("手动价/股", min_value=0, format="$%.2f",
+                        help="留空=自动中值；填入则手动覆盖"),
+            "备注":   st.column_config.TextColumn("备注"),
+        },
+        use_container_width=True,
+        key="options_editor",
+    )
+
+    st.subheader("🗒️ 手动价值（其他无法抓取的仓位）")
+    st.caption("既不是股票也不是期权、无法自动抓取的仓位，直接填入当前市值 (USD)。")
     manual_df = _manual_to_df(portfolio)
     edited_manual = st.data_editor(
         manual_df,
@@ -391,7 +572,7 @@ with tab_edit:
     btn_l, btn_r = st.columns(2)
     with btn_l:
         if st.button("💾 保存持仓配置", use_container_width=True):
-            _save_portfolio(portfolio, edited_pos, edited_manual)
+            _save_portfolio(portfolio, edited_pos, edited_manual, edited_options)
             st.cache_data.clear()
             ok, msg = sync_to_github(
                 config.PORTFOLIO_PATH, "data/portfolio.json",
@@ -406,7 +587,7 @@ with tab_edit:
             st.rerun()
     with btn_r:
         if st.button("🚀 保存 + 获取最新价格", type="primary", use_container_width=True):
-            updated = _save_portfolio(portfolio, edited_pos, edited_manual)
+            updated = _save_portfolio(portfolio, edited_pos, edited_manual, edited_options)
             st.cache_data.clear()
             ok, msg = sync_to_github(
                 config.PORTFOLIO_PATH, "data/portfolio.json",

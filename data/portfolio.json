@@ -272,13 +272,80 @@
       ]
     }
   ],
-  "manual_values": {
-    "GLW Call": 13262.5,
-    "MARVEL CALL": 16855.0,
-    "NOK Call 2026 12": 1525.0,
-    "DRAM Call 56 2027 6": 3275.0,
-    "2*DRAM CALL 55 2027 6": 6620.0,
-    "SOXX 540 Call 2027 6月": 19000.0
-  },
+  "manual_values": {},
+  "options": [
+    {
+      "display": "GLW 155 Call",
+      "underlying": "GLW",
+      "expiry": "2027-06-17",
+      "type": "call",
+      "strike": 155,
+      "contract": "GLW270617C00155000",
+      "contracts": 1,
+      "sector": "光",
+      "manual_mark": null,
+      "note": "2027-06 到期"
+    },
+    {
+      "display": "Marvell 160 Call",
+      "underlying": "MRVL",
+      "expiry": "2027-06-17",
+      "type": "call",
+      "strike": 160,
+      "contract": "MRVL270617C00160000",
+      "contracts": 1,
+      "sector": "光",
+      "manual_mark": null,
+      "note": "2027-06 到期"
+    },
+    {
+      "display": "NOK 13 Call",
+      "underlying": "NOK",
+      "expiry": "2026-12-18",
+      "type": "call",
+      "strike": 13,
+      "contract": "NOK261218C00013000",
+      "contracts": 5,
+      "sector": "光",
+      "manual_mark": null,
+      "note": "2026-12 到期，5 张"
+    },
+    {
+      "display": "DRAM 56 Call",
+      "underlying": "DRAM",
+      "expiry": "2027-06-17",
+      "type": "call",
+      "strike": 56,
+      "contract": "DRAM270617C00056000",
+      "contracts": 1,
+      "sector": "存",
+      "manual_mark": null,
+      "note": "2027-06 到期"
+    },
+    {
+      "display": "DRAM 55 Call",
+      "underlying": "DRAM",
+      "expiry": "2027-06-17",
+      "type": "call",
+      "strike": 55,
+      "contract": "DRAM270617C00055000",
+      "contracts": 2,
+      "sector": "存",
+      "manual_mark": null,
+      "note": "2027-06 到期，2 张"
+    },
+    {
+      "display": "SOXX 540 Call",
+      "underlying": "SOXX",
+      "expiry": "2027-06-17",
+      "type": "call",
+      "strike": 540,
+      "contract": "SOXX270617C00540000",
+      "contracts": 1,
+      "sector": "半导体",
+      "manual_mark": null,
+      "note": "半导体 ETF，板块可自行调整"
+    }
+  ],
   "last_modified": "2026-06-30"
 }
