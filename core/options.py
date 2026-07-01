@@ -13,6 +13,7 @@ import re
 from dataclasses import dataclass, asdict
 from datetime import date, datetime
 
+import requests
 import yfinance as yf
 
 # 年化无风险利率（近似，用于 BS 贴现项，可后续接入真实国债利率）
@@ -131,6 +132,79 @@ def bs_greeks(
     }
 
 
+def implied_vol_from_price(
+    price: float, S: float, K: float, T: float,
+    r: float = RISK_FREE_RATE, option_type: str = "call",
+) -> float | None:
+    """用二分法从期权价格反解隐含波动率（当外部数据源都拿不到 IV 时兜底）。
+
+    这样即使只拿到期权成交价，也能算出与该价格自洽的希腊字母。
+    返回小数形式的年化波动率，无解时返回 None。
+    """
+    if not (price and S and K and T and T > 0 and price > 0):
+        return None
+    # 价格不能低于内在价值（否则无解）
+    is_call = option_type.lower().startswith("c")
+    intrinsic = max(S - K, 0.0) if is_call else max(K - S, 0.0)
+    if price < intrinsic - 1e-6:
+        return None
+    lo, hi = 1e-4, 5.0  # 0.01% ~ 500% 波动率区间
+    f_lo = bs_greeks(S, K, T, lo, r, option_type)["price"] - price
+    f_hi = bs_greeks(S, K, T, hi, r, option_type)["price"] - price
+    if f_lo * f_hi > 0:
+        return None  # 区间内无符号变化，无解
+    for _ in range(60):
+        mid = 0.5 * (lo + hi)
+        f_mid = bs_greeks(S, K, T, mid, r, option_type)["price"] - price
+        if abs(f_mid) < 1e-4:
+            return mid
+        if f_lo * f_mid < 0:
+            hi = mid
+        else:
+            lo, f_lo = mid, f_mid
+    return 0.5 * (lo + hi)
+
+
+# CBOE 延迟报价缓存（同一进程内按标的缓存整条期权链，避免重复下载）
+_CBOE_CACHE: dict[str, dict] = {}
+
+
+def _fetch_cboe_chain(root: str) -> dict:
+    """抓取 CBOE 免费延迟报价（含真实 IV 与希腊字母），返回 {OCC代码: 行情dict}。
+
+    端点： https://cdn.cboe.com/api/global/delayed_quotes/options/{ROOT}.json
+    这是独立于 Yahoo 的数据源，直接提供 delta/gamma/theta/vega/rho/iv/bid/ask，
+    因此当 Yahoo 期权链被限流时，仍能给出完整希腊字母。
+    """
+    root = root.upper()
+    if root in _CBOE_CACHE:
+        return _CBOE_CACHE[root]
+    result: dict = {}
+    for host in ("cdn.cboe.com", "www.cboe.com"):
+        url = f"https://{host}/api/global/delayed_quotes/options/{root}.json"
+        try:
+            resp = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+            if resp.status_code != 200:
+                continue
+            opts = resp.json().get("data", {}).get("options", [])
+            for o in opts:
+                occ = o.get("option")
+                if occ:
+                    result[occ] = o
+            if result:
+                break
+        except Exception:
+            continue
+    _CBOE_CACHE[root] = result
+    return result
+
+
+def _cboe_lookup(root: str, contract_symbol: str) -> dict | None:
+    """在 CBOE 期权链中查找指定合约，返回其行情 dict（无则 None）。"""
+    chain = _fetch_cboe_chain(root)
+    return chain.get(contract_symbol)
+
+
 def fetch_option(contract_symbol: str, underlying_price: float | None = None) -> OptionQuote | None:
     """抓取期权行情并计算希腊字母。
     从期权链拿 last/bid/ask/IV（比单合约 fast_info 更全），再用 BS 算 greeks。
@@ -166,9 +240,39 @@ def fetch_option(contract_symbol: str, underlying_price: float | None = None) ->
     except Exception:
         pass
 
-    # 兜底：期权链抓不到时（Streamlit Cloud 常屏蔽 option_chain 端点），
-    # 改用单合约行情端点取最新价（更不易被限流）。此路径拿不到 bid/ask/IV，
-    # 故无希腊字母，但至少能给出价格与市值。
+    # Yahoo 偶尔返回近零/异常的 IV（如 1e-5），会算出退化的希腊字母（delta≈1）。
+    # 视为无效，交由下方 CBOE 兜底取真实 IV 与希腊字母。
+    if iv is not None and iv < 0.01:
+        iv = None
+
+    # 兜底①：Yahoo 期权链拿不到 IV（希腊字母算不出）或整行为空时，
+    # 改用 CBOE 免费延迟报价——独立数据源，直接带真实 IV + 希腊字母 + bid/ask，
+    # 因此 Yahoo 被限流时仍能给出完整希腊字母。
+    cboe_greeks = None
+    if iv is None or (last_price is None and bid is None and ask is None):
+        cb = _cboe_lookup(root, contract_symbol)
+        if cb:
+            def _f(v):
+                try:
+                    return float(v) if v not in (None, "", 0) else None
+                except (TypeError, ValueError):
+                    return None
+            if bid is None:
+                bid = _f(cb.get("bid"))
+            if ask is None:
+                ask = _f(cb.get("ask"))
+            if last_price is None:
+                last_price = _f(cb.get("last_trade_price"))
+            cb_iv = _f(cb.get("iv"))
+            if iv is None and cb_iv:
+                iv = cb_iv
+            # CBOE 直接给的真实希腊字母（约定与本模块一致：theta/日、vega 每 1%）
+            g = {k: _f(cb.get(k)) for k in ("delta", "gamma", "theta", "vega", "rho")}
+            if any(v is not None for v in g.values()):
+                cboe_greeks = g
+
+    # 兜底②：期权链与 CBOE 都拿不到价时，用单合约行情端点取最新价
+    # （更不易被限流，但只有价格、无 IV/希腊字母）。
     if last_price is None and bid is None and ask is None:
         try:
             oc = yf.Ticker(contract_symbol)
@@ -199,10 +303,20 @@ def fetch_option(contract_symbol: str, underlying_price: float | None = None) ->
         mid_price = (bid + ask) / 2.0
     mark_price = mid_price if mid_price is not None else last_price
 
+    # 希腊字母：优先用 CBOE 真实值；其次用 IV 走 BS；
+    # 最后兜底——用估值价反解 IV 再算，保证有价就有希腊字母。
     greeks = {"delta": None, "gamma": None, "theta": None, "vega": None, "rho": None}
-    if underlying_price and iv and T > 0:
+    if cboe_greeks:
+        greeks = {k: cboe_greeks.get(k) for k in greeks}
+    elif underlying_price and iv and T > 0:
         g = bs_greeks(underlying_price, strike, T, iv, option_type=otype)
-        greeks = {k: g[k] for k in ("delta", "gamma", "theta", "vega", "rho")}
+        greeks = {k: g[k] for k in greeks}
+    elif underlying_price and mark_price and T > 0:
+        solved = implied_vol_from_price(mark_price, underlying_price, strike, T, option_type=otype)
+        if solved:
+            iv = solved
+            g = bs_greeks(underlying_price, strike, T, solved, option_type=otype)
+            greeks = {k: g[k] for k in greeks}
 
     return OptionQuote(
         contract=contract_symbol,
