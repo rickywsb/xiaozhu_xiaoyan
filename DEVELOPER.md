@@ -523,3 +523,77 @@ Step 5  写 pages/1_Portfolio.py（表格 + 一键更新，先跑通逻辑）
 ```
 
 > 每个 Step 完成后更新本文档的进度状态。
+
+---
+
+## 10. 期权支持 + 希腊字母 + 日间对比（新增）
+
+### 10.1 背景
+期权持仓此前只能手填市值，无法自动更新，也看不到 IV/greeks。本模块让期权像股票
+一样自动抓价，并计算完整希腊字母，同时为**所有持仓**（股票 + 期权）提供与前一交易日
+的对比。
+
+### 10.2 `core/options.py` — 期权抓价 + Black-Scholes
+- **数据来源**：yfinance 的 `option_chain(expiry)` 提供 lastPrice / bid / ask /
+  **impliedVolatility** / inTheMoney，但**不提供 delta/gamma/theta/vega/rho**。
+- **希腊字母**：用 Black-Scholes 公式自行计算，仅依赖标准库 `math.erf`（**无需 scipy**）。
+  输入 = 标的价 S、行权价 K、剩余年限 T、IV σ、无风险利率 r（默认 `RISK_FREE_RATE=0.045`）。
+  - theta 已转「每日」（/365），vega/rho 已缩放为「每 1% 变化」。
+- **OCC 合约代码**：`标的 + YYMMDD + C/P + 行权价×1000(补零8位)`
+  - 例：`GLW270617C00155000` = GLW / 2027-06-17 / Call / 行权价 155
+  - `build_occ(underlying, expiry, type, strike)` 生成、`parse_occ(symbol)` 解析。
+- **估值口径：中值优先**。`mark_price = (bid+ask)/2`，无 bid/ask 时回退 `lastPrice`。
+  （lastPrice 常为过时成交价，价差大的期权如 Marvell 会明显偏离，故用中值。）
+- **每张市值** = `mark_price × 100`（`CONTRACT_MULTIPLIER = 100`）。
+
+### 10.3 手动覆盖 + 偏移检测 — `resolve_option_value()`
+应对「抓不到」或「与券商(Fidelity/moomoo)偏移较大」两种情况：
+
+| 场景 | 行为 | source |
+|------|------|--------|
+| 无手填，抓取成功 | 用抓取中值 | `fetched` |
+| 有手填 `manual_mark` | **以手填为准**（用户显式修正） | `manual` |
+| 有手填 + 抓取偏移 > 15% | 仍用手填，但 `flagged=True` 提示复核 | `manual` |
+| 抓不到 + 有手填 | 兜底用手填 | `manual` |
+| 抓不到 + 无手填 | `value=None`（无法估值） | `none` |
+
+- 偏移阈值 `DEVIATION_THRESHOLD = 0.15`（15%）。
+- `deviation = (fetched - manual) / manual`，UI 可据 `flagged` 高亮提醒。
+
+### 10.4 全持仓日间对比 — `core/snapshots.py`
+- 每次「一键更新价格」时 `save_snapshot(positions)` 把当日**所有持仓**（股票 + 期权）
+  的价格与关键指标写入 `data/snapshots/YYYY-MM-DD.json`（**同日覆盖**）。
+  - key = 股票 `yf_ticker` 或期权 OCC 合约代码。
+  - 每条记录含 `price / value / kind`，期权额外含 `iv/delta/gamma/theta/vega/underlying_price`。
+- `latest_prior_snapshot(before=今天)`：取**严格早于今天**的最近一个快照，
+  自动跳过周末/节假日无数据的日子。
+- `compute_changes(current, prior)`：逐支持仓算 `price/value/iv/delta/...` 的
+  `chg`（绝对变化）与 `pct`（百分比）。首次无历史时 chg/pct 为 `None`。
+- 注意：`data/snapshots/*.json` 属于运行时数据，不进 git（同 `data/` 目录约定）。
+
+### 10.5 portfolio.json 期权数据模型（计划）
+```jsonc
+"options": [
+  { "display": "GLW 155 Call", "contract": "GLW270617C00155000",
+    "contracts": 1, "sector": "光",
+    "manual_mark": null,   // 每股手动覆盖价；null=用抓取中值
+    "note": "..." }
+]
+```
+市值 = `mark × 100 × contracts`；`manual_mark` 非空时以手填为准。
+
+### 10.6 已验证的期权合约（测试基准，2026-06-30）
+| 期权 | 合约代码 | 张数 | 中值/股 | 每张 | IV | Delta |
+|------|---------|-----|--------|------|-----|-------|
+| GLW 155 Call | `GLW270617C00155000` | 1 | 133.6 | $13,360 | 93.9% | 0.85 |
+| DRAM 55 Call | `DRAM270617C00055000` | 2 | 33.55 | $3,355 | 94.7% | 0.80 |
+| DRAM 56 Call | `DRAM270617C00056000` | 1 | 33.12 | $3,312 | 94.7% | 0.79 |
+| MRVL 160 Call | `MRVL270617C00160000` | 1 | 170.28 | $17,028 | 100.5% | 0.88 |
+| NOK 13 Call | `NOK261218C00013000` | 5 | 2.92 | $292 | 78.3% | 0.64 |
+
+### 10.7 待办（下一步 UI 接入）
+- [ ] `pages/1_Portfolio.py`：期权行接入自动抓价 + `manual_mark` 编辑列
+- [ ] 持仓表新增「当日涨跌%」列（红绿），数据来自 `compute_changes`
+- [ ] 点击/展开持仓看明细：期权显示 greeks + 日间变化，股票显示价格变化
+- [ ] 更新价格时调用 `save_snapshot` 归档当日快照
+
