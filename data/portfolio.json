@@ -200,7 +200,7 @@
         {
           "display": "SK Hynix",
           "yf_ticker": "000660.KS",
-          "shares": 8.0,
+          "shares": 11.0,
           "sector": "存",
           "native_currency": "KRW",
           "note": "韩国交易所"
@@ -279,9 +279,9 @@
       "underlying": "GLW",
       "expiry": "2027-06-17",
       "type": "call",
-      "strike": 155,
+      "strike": 155.0,
       "contract": "GLW270617C00155000",
-      "contracts": 1,
+      "contracts": 1.0,
       "sector": "光",
       "manual_mark": null,
       "note": "2027-06 到期"
@@ -291,9 +291,9 @@
       "underlying": "MRVL",
       "expiry": "2027-06-17",
       "type": "call",
-      "strike": 160,
+      "strike": 160.0,
       "contract": "MRVL270617C00160000",
-      "contracts": 1,
+      "contracts": 1.0,
       "sector": "光",
       "manual_mark": null,
       "note": "2027-06 到期"
@@ -303,9 +303,9 @@
       "underlying": "NOK",
       "expiry": "2026-12-18",
       "type": "call",
-      "strike": 13,
+      "strike": 13.0,
       "contract": "NOK261218C00013000",
-      "contracts": 5,
+      "contracts": 5.0,
       "sector": "光",
       "manual_mark": null,
       "note": "2026-12 到期，5 张"
@@ -315,9 +315,9 @@
       "underlying": "DRAM",
       "expiry": "2027-06-17",
       "type": "call",
-      "strike": 56,
+      "strike": 56.0,
       "contract": "DRAM270617C00056000",
-      "contracts": 1,
+      "contracts": 1.0,
       "sector": "存",
       "manual_mark": null,
       "note": "2027-06 到期"
@@ -327,9 +327,9 @@
       "underlying": "DRAM",
       "expiry": "2027-06-17",
       "type": "call",
-      "strike": 55,
+      "strike": 55.0,
       "contract": "DRAM270617C00055000",
-      "contracts": 2,
+      "contracts": 2.0,
       "sector": "存",
       "manual_mark": null,
       "note": "2027-06 到期，2 张"
@@ -339,13 +339,13 @@
       "underlying": "SOXX",
       "expiry": "2027-06-17",
       "type": "call",
-      "strike": 540,
+      "strike": 540.0,
       "contract": "SOXX270617C00540000",
-      "contracts": 1,
+      "contracts": 1.0,
       "sector": "半导体",
       "manual_mark": null,
       "note": "半导体 ETF，板块可自行调整"
     }
   ],
-  "last_modified": "2026-06-30"
+  "last_modified": "2026-07-01"
 }
