@@ -166,6 +166,28 @@ def fetch_option(contract_symbol: str, underlying_price: float | None = None) ->
     except Exception:
         pass
 
+    # 兜底：期权链抓不到时（Streamlit Cloud 常屏蔽 option_chain 端点），
+    # 改用单合约行情端点取最新价（更不易被限流）。此路径拿不到 bid/ask/IV，
+    # 故无希腊字母，但至少能给出价格与市值。
+    if last_price is None and bid is None and ask is None:
+        try:
+            oc = yf.Ticker(contract_symbol)
+            lp = None
+            try:
+                lp = oc.fast_info.get("lastPrice")
+            except Exception:
+                lp = None
+            if not lp:
+                hist = oc.history(period="5d")
+                if hist is not None and not hist.empty:
+                    closes = hist["Close"].dropna()
+                    if len(closes):
+                        lp = float(closes.iloc[-1])
+            if lp and float(lp) > 0:
+                last_price = float(lp)
+        except Exception:
+            pass
+
     # 剩余期限（年）
     exp_d = datetime.strptime(expiry, "%Y-%m-%d").date()
     dte = (exp_d - date.today()).days
