@@ -16,7 +16,7 @@
         {
           "display": "MU",
           "yf_ticker": "MU",
-          "shares": 53.32,
+          "shares": 68.32,
           "sector": "存",
           "native_currency": "USD",
           "note": "33+6.32"
@@ -32,7 +32,7 @@
         {
           "display": "AVGO",
           "yf_ticker": "AVGO",
-          "shares": 26.042,
+          "shares": 5.0,
           "sector": "配置",
           "native_currency": "USD",
           "note": "63+21.039+5+2.998"
@@ -88,7 +88,7 @@
         {
           "display": "AAOI",
           "yf_ticker": "AAOI",
-          "shares": 68.0,
+          "shares": 58.0,
           "sector": "光",
           "native_currency": "USD",
           "note": ""
@@ -148,22 +148,6 @@
           "sector": "其他",
           "native_currency": "USD",
           "note": "Nebius"
-        },
-        {
-          "display": "EWY",
-          "yf_ticker": "EWY",
-          "shares": 6.0,
-          "sector": "存",
-          "native_currency": "USD",
-          "note": "韩国ETF"
-        },
-        {
-          "display": "VRT",
-          "yf_ticker": "VRT",
-          "shares": 2.0,
-          "sector": "其他",
-          "native_currency": "USD",
-          "note": ""
         },
         {
           "display": "ARM",
@@ -248,7 +232,7 @@
         {
           "display": "三倍费城半导体",
           "yf_ticker": "SOXL",
-          "shares": 8.0,
+          "shares": 3.0,
           "sector": "半导体",
           "native_currency": "USD",
           "note": "None"
