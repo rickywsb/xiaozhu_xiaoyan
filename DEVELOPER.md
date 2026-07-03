@@ -604,3 +604,65 @@ Step 5  写 pages/1_Portfolio.py（表格 + 一键更新，先跑通逻辑）
 > source/flagged）；`_build_view_df(portfolio, cache)` 签名由原 `prices` 改为整个 cache。
 > 期权按各自 `sector`（光/存/半导体）计入板块饼图，不再单列「期权」类。
 
+---
+
+## 11. 期权数据韧性（三级兜底）+ 期权复盘页（新增）
+
+> **日期**: 2026-07-03　**状态**: ✅ 已上线
+
+### 11.1 背景
+
+线上（Streamlit Cloud 共享 IP）与本地都出现过 Yahoo 限流 `option_chain` 的情况：
+要么整条链抓不到，要么"抓到了但返回近零 IV（≈1e-5）"。前者导致期权价格空白，
+后者导致希腊字母退化（delta≈1、其余≈0），表现为"刷新后没有希腊字母、全是 last price"。
+
+### 11.2 `core/options.py` 抓价三级兜底
+
+`fetch_option()` 现按以下顺序取数，任一级成功即用，保证"有价就有希腊字母"：
+
+| 级别 | 数据源 | 提供 | 触发条件 |
+|---|---|---|---|
+| ① | Yahoo `option_chain` | last/bid/ask/IV（IV→BS 算 greeks） | 默认首选 |
+| ② | **CBOE 免费延迟报价** | **真实 IV + delta/gamma/theta/vega/rho + bid/ask** | ① 拿不到 IV 或整行为空 |
+| ③ | 单合约行情 + **IV 反解** | 单合约 last → 二分法反解 IV → BS 算 greeks | ①② 都无 bid/ask/IV |
+
+- CBOE 端点：`https://cdn.cboe.com/api/global/delayed_quotes/options/{ROOT}.json`
+  （备用 host `www.cboe.com`）。免费、无需 key、独立于 Yahoo，不会一起被限流。
+  返回字段直接含 `iv/delta/gamma/theta/vega/rho/bid/ask/last_trade_price`，
+  约定与本模块一致（theta/日、vega 每 1%）。同一进程内按 root 缓存整条链（`_CBOE_CACHE`）。
+- **近零 IV 过滤**：Yahoo 返回 `iv < 0.01` 视为无效（置 None），从而触发 CBOE 兜底。
+- 新增函数：`implied_vol_from_price()`（二分法反解 IV）、`_fetch_cboe_chain()`、
+  `_cboe_lookup()`。新增依赖 `requests`（yfinance 已传递依赖，无需额外安装）。
+
+### 11.3 `core/options_review.py`（新模块）
+
+围绕"跌的是哪一块、什么时候抄底"三大能力，全部复用 `data/snapshots/*.json`：
+
+| 函数 | 作用 |
+|---|---|
+| `attribute_change(prev, curr, prev_date, curr_date, contracts)` | 单支期权日间价格变化归因，用**上一日**希腊字母做一阶泰勒展开：`ΔV ≈ delta·ΔS + ½·gamma·ΔS² + theta·Δt + vega·ΔIV(点)`，返回各分量合约级 $ + `residual`（残差吸收高阶/rho/误差，各分量之和恒等于实际变化） |
+| `portfolio_attribution(cache)` | 对所有期权做归因并汇总组合级各分量。取**最近两个不同日期**的快照对比（`curr=最新快照日`，`prev=严格早于它的最近快照`） |
+| `decay_metrics(opt)` | 时间衰减：`theta_day_usd`（每日 $ 损耗）、`theta_pct`（占市值%/日）、`dte`、未来 7/30 日线性粗估 |
+| `iv_history(contract)` / `iv_stats(contract, current_iv)` | 遍历历史快照收集 IV 序列，算 **IV Rank**（区间位置）与 **IV Percentile**（低于当前的天数比例），需 ≥2 个数据点 |
+| `entry_signal(iv_rank, dte, moneyness)` | 买方视角启发式：IV Rank ≤30% → 🟢抄底良机；≥70% → 🔴偏贵/观望；结合 DTE、价内外程度 |
+| `moneyness_of(contract, S)` | 由 OCC 解析行权价，算 `S/K` |
+
+约定：theta=每日、vega=每 1% IV、iv=小数。归因数学已单元验证（分量和=实际变化）。
+
+### 11.4 `pages/5_Options_Review.py`（新页面「🎯 期权复盘」）
+
+注册在 `app.py` 的「投资组合」分组下。五个板块：
+
+1. **组合级期权敞口** — 期权总市值、净 Delta 敞口（delta 折算美元）、每日 Theta 损耗、Vega 敞口
+2. **涨跌归因** — 组合级 metrics + Plotly 瀑布图（标的Δ+Γ / 时间Θ / IV V / 残差 → 净变化）+ 逐支明细表
+3. **时间衰减报告** — 逐支 Theta/日 $、日损耗率、剩余天数、未来 7/30 日损耗估算
+4. **抄底/进场信号** — 🟢🟡🔴 信号 + IV Rank/分位 + S/K + 剩余天数 + 逐支解读 expander
+5. **IV 历史走势** — 各期权 IV 时间序列折线图
+
+### 11.5 数据积累依赖（重要）
+
+归因（②）、IV Rank/分位（④）、IV 走势（⑤）都依赖**多天的期权快照**。
+目前仅有一天含期权的快照，故这些区块先显示"数据积累中"提示。
+**每天点一次「🔄 一键更新价格」**（会写入当日快照），历史攒够后自动填充。
+这也符合"抄底时机"的本质：需一段 IV 历史才能判断当前 IV 算高还是低。
+

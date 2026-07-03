@@ -13,6 +13,7 @@ pg = st.navigation(
     {
         "投资组合": [
             st.Page("pages/1_Portfolio.py", title="💼 持仓净值", icon="💼"),
+            st.Page("pages/5_Options_Review.py", title="🎯 期权复盘", icon="🎯"),
         ],
         "分析工具": [
             st.Page("pages/2_Momentum.py", title="📊 量能健康", icon="📊"),
