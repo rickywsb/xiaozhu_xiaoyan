@@ -16,7 +16,7 @@
         {
           "display": "MU",
           "yf_ticker": "MU",
-          "shares": 68.32,
+          "shares": 76.32,
           "sector": "存",
           "native_currency": "USD",
           "note": "33+6.32"
@@ -48,18 +48,10 @@
         {
           "display": "SIVEF",
           "yf_ticker": "SIVEF",
-          "shares": 7200.0,
+          "shares": 6000.0,
           "sector": "光",
           "native_currency": "USD",
           "note": "OTC"
-        },
-        {
-          "display": "QQQM",
-          "yf_ticker": "QQQM",
-          "shares": 44.0,
-          "sector": "配置",
-          "native_currency": "USD",
-          "note": "ETF"
         },
         {
           "display": "GLW",
@@ -86,14 +78,6 @@
           "note": "37+30"
         },
         {
-          "display": "AAOI",
-          "yf_ticker": "AAOI",
-          "shares": 58.0,
-          "sector": "光",
-          "native_currency": "USD",
-          "note": ""
-        },
-        {
           "display": "AAOX",
           "yf_ticker": "AAOX",
           "shares": 3.0,
@@ -112,7 +96,7 @@
         {
           "display": "SNDK",
           "yf_ticker": "SNDK",
-          "shares": 7.0,
+          "shares": 11.0,
           "sector": "存",
           "native_currency": "USD",
           "note": ""
@@ -184,7 +168,7 @@
         {
           "display": "SK Hynix",
           "yf_ticker": "000660.KS",
-          "shares": 11.0,
+          "shares": 13.0,
           "sector": "存",
           "native_currency": "KRW",
           "note": "韩国交易所"
@@ -214,30 +198,6 @@
           "note": "600"
         },
         {
-          "display": "QCOM",
-          "yf_ticker": "QCOM",
-          "shares": 10.0,
-          "sector": "半导体",
-          "native_currency": "USD",
-          "note": "None"
-        },
-        {
-          "display": "MUU",
-          "yf_ticker": "MUU",
-          "shares": 3.0,
-          "sector": "存",
-          "native_currency": "USD",
-          "note": "None"
-        },
-        {
-          "display": "三倍费城半导体",
-          "yf_ticker": "SOXL",
-          "shares": 3.0,
-          "sector": "半导体",
-          "native_currency": "USD",
-          "note": "None"
-        },
-        {
           "display": "Seagate",
           "yf_ticker": "STX",
           "shares": 1.0,
@@ -249,6 +209,22 @@
           "display": "Disk",
           "yf_ticker": "Disk",
           "shares": 29.0,
+          "sector": "存",
+          "native_currency": "USD",
+          "note": "None"
+        },
+        {
+          "display": "AMAT",
+          "yf_ticker": "AMAT",
+          "shares": 6.0,
+          "sector": "存",
+          "native_currency": "USD",
+          "note": "None"
+        },
+        {
+          "display": "KLAC",
+          "yf_ticker": "KLAC",
+          "shares": 26.0,
           "sector": "存",
           "native_currency": "USD",
           "note": "None"
@@ -331,5 +307,5 @@
       "note": "半导体 ETF，板块可自行调整"
     }
   ],
-  "last_modified": "2026-07-01"
+  "last_modified": "2026-07-03"
 }
