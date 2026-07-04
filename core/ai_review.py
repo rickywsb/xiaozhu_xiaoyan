@@ -1,8 +1,9 @@
 """core/ai_review.py — LLM 分析层（基于我们已算好的量化信号做解读，非投资建议）
 
-两个功能：
+三个功能：
   • news_digest(items_by_theme)  —— 资讯晨报：主题摘要 + 情绪 + 对持仓的潜在影响
   • portfolio_diagnosis(payload) —— 持仓健康诊断：集中度/赛道暴露/信号背离/风险
+  • options_review(payload)      —— 期权复盘：涨跌归因 + 时间衰减 + 进场/抄底信号解读
 
 设计原则：
   - Grounding：只喂 LLM 我们算好的数字，禁止其臆造价格/指标。
@@ -136,5 +137,53 @@ def portfolio_diagnosis(
         "}\n"
         "divergences 只列真正存在矛盾信号的标的；无背离则返回空数组。"
         "health_score 综合动量、资金流一致性、集中度与风险给出。"
+    )
+    return llm.chat_json(system, user, model=model, max_tokens=1800)
+
+
+# ─── 功能 C：期权复盘 ─────────────────────────────────────────────────────────
+
+def options_review(
+    payload: dict,
+    *,
+    model: str = llm.DEFAULT_MODEL,
+) -> dict:
+    """对期权组合做一次自然语言复盘。
+
+    payload 结构（全部由页面用我们已算好的数字构造，LLM 不得臆造）：
+      {
+        "组合敞口": {期权总市值, 净Delta敞口USD, 每日Theta损耗USD, Vega敞口USD每1%IV},
+        "涨跌归因": {对比区间, 净变化, 标的贡献, 时间衰减, IV变化, 残差},   # 可为空
+        "逐支归因": [{期权, 板块, 实际变化, 标的Δ, 时间Θ, IV_V, 标的Δ价, ΔIV点}],
+        "时间衰减": [{期权, 剩余天数, Theta每日, 日损耗率, 未来7日, 未来30日, 市值}],
+        "进场信号": [{期权, 信号, 当前IV, IV_Rank, IV分位, S比K, 剩余天数, 理由}],
+      }
+    """
+    system = _GUARDRAIL + (
+        " 你精通期权希腊字母（Delta/Gamma/Theta/Vega）与隐含波动率(IV)分析，"
+        "能把'跌的是标的、时间衰减还是 IV 收缩'讲清楚，并结合 IV 分位判断当前买方成本高低。"
+    )
+    user = (
+        "下面是一支半导体组合的**期权持仓**及我们自算的：组合级希腊字母敞口、"
+        "日间涨跌归因（把涨跌拆成 标的Δ+Γ / 时间衰减Θ / IV变化V / 残差）、"
+        "时间衰减报告、以及基于历史 IV 分位的进场/抄底信号。\n"
+        "请做一次中文期权复盘，帮基金经理回答：**现在跌/涨的主因是什么、"
+        "时间价值损耗有多快、当前是不是买方进场的好时机**。\n\n"
+        f"数据：\n{json.dumps(payload, ensure_ascii=False, indent=2)}\n\n"
+        "字段说明：正的'标的Δ'=因标的上涨而赚；大额负的'IV变化V'=隐含波动率收缩(IV crush)拖累；"
+        "'时间衰减Θ'恒为缓慢负损耗；IV_Rank 越低=当前 IV 处于自身历史低位、买方越便宜。\n\n"
+        "请严格输出如下 JSON：\n"
+        "{\n"
+        '  "overview": "3~5 句总览：本期期权组合整体涨跌与主因",\n'
+        '  "attribution_read": "归因解读：本期涨跌主要由 标的/时间衰减/IV 哪一块驱动，点名影响最大的期权",\n'
+        '  "decay_alert": "时间衰减警示：哪几支被时间吃得最快、临近到期需要注意的",\n'
+        '  "entry_read": "进场/抄底解读：结合 IV 分位与到期时间，当前买方成本偏高还是偏低",\n'
+        '  "per_option": [\n'
+        '    {"option": "期权名", "read": "该期权一句话点评（涨跌主因/衰减/信号）"}\n'
+        "  ],\n"
+        '  "actions": ["可考虑关注的方向或动作（中性表述，非指令）…"],\n'
+        '  "risks": ["需警惕的风险点（如临近到期、IV 高位、集中度）…"]\n'
+        "}\n"
+        "per_option 覆盖数据里出现的主要期权；无历史 IV 样本时 entry_read 说明'样本不足'。"
     )
     return llm.chat_json(system, user, model=model, max_tokens=1800)

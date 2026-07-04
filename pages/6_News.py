@@ -1,4 +1,4 @@
-"""pages/6_资讯.py — 半导体 / 存储 / 光通信 资讯聚合"""
+"""pages/6_News.py — 半导体 / 存储 / 光通信 资讯聚合"""
 
 import json
 import sys

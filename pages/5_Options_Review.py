@@ -18,6 +18,7 @@ import config
 from core.price_updater import load_cache
 from core import options_review as R
 from core.options import parse_occ
+from core import llm, ai_review
 
 st.title("🎯 期权复盘")
 st.caption("涨跌归因 · 时间衰减 · 抄底/进场信号 —— 仅辅助判断，非投资建议")
@@ -213,3 +214,118 @@ if iv_series:
                       legend=dict(orientation="h"))
     st.plotly_chart(fig, use_container_width=True)
     st.caption("IV 处于自身历史低位时买入期权更便宜（抄底成本低）；高位时买方偏贵。")
+
+
+# ─── ⑥ AI 期权复盘 ────────────────────────────────────────────────────────────
+st.subheader("⑥ 🤖 AI 期权复盘")
+
+if not llm.available():
+    st.info("未检测到 OpenAI Key。在 Streamlit Secrets 配置 `OPENAI_API_KEY` 后即可生成 AI 复盘。")
+else:
+    ai_model = st.radio(
+        "模型档位",
+        options=[llm.DEFAULT_MODEL, llm.DEEP_MODEL],
+        format_func=lambda m: "gpt-4o-mini（便宜·日常）" if m == llm.DEFAULT_MODEL
+        else "gpt-4.1（更强·深度）",
+        horizontal=True, key="opt_ai_model",
+    )
+
+    def _build_options_payload() -> dict:
+        exposure = {
+            "期权总市值": round(total_value, 0),
+            "净Delta敞口USD": round(net_delta_notional, 0),
+            "每日Theta损耗USD": round(total_theta, 1),
+            "Vega敞口USD每1%IV": round(total_vega, 0),
+        }
+        attribution = {}
+        if attr["totals"] and attr["prev_date"] is not None:
+            t = attr["totals"]
+            attribution = {
+                "对比区间": f"{attr['prev_date']} → {attr['curr_date']}",
+                "净变化": round(t["actual"], 0),
+                "标的贡献ΔΓ": round(t["delta_pnl"] + t["gamma_pnl"], 0),
+                "时间衰减Θ": round(t["theta_pnl"], 1),
+                "IV变化V": round(t["vega_pnl"], 0),
+                "残差": round(t["residual"], 0),
+            }
+        per_attr = []
+        if attr["totals"] and attr["prev_date"] is not None:
+            for c, r in attr["rows"].items():
+                per_attr.append({
+                    "期权": r["display"], "板块": r.get("sector", ""),
+                    "实际变化": round(r["actual"], 0),
+                    "标的Δ": round(r["delta_pnl"], 0),
+                    "时间Θ": round(r["theta_pnl"], 1),
+                    "IV_V": round(r["vega_pnl"], 0),
+                    "标的Δ价": round(r["dS"], 2) if r.get("dS") is not None else None,
+                    "ΔIV点": round(r["d_iv_pts"], 2) if r.get("d_iv_pts") is not None else None,
+                })
+        decay = [{
+            "期权": d["期权"], "剩余天数": d["剩余天数"],
+            "Theta每日": d["Theta/日"], "日损耗率": d["日损耗率"],
+            "未来7日": d["未来7日≈"], "未来30日": d["未来30日≈"],
+            "市值": d["当前市值"],
+        } for d in decay_rows]
+        signals = [{
+            "期权": s["期权"], "信号": s["信号"], "当前IV": s["当前IV"],
+            "IV_Rank": s["IV Rank"], "IV分位": s["IV分位"],
+            "S比K": s["S/K"], "剩余天数": s["剩余天数"], "理由": s["_reasons"],
+        } for s in sig_rows]
+        return {
+            "组合敞口": exposure,
+            "涨跌归因": attribution,
+            "逐支归因": per_attr,
+            "时间衰减": decay,
+            "进场信号": signals,
+        }
+
+    @st.cache_data(show_spinner="🤖 AI 正在复盘期权…", ttl=1800)
+    def _cached_options_review(cache_key: str, payload: dict, model: str) -> dict:
+        return ai_review.options_review(payload, model=model)
+
+    if st.button("🩺 生成 AI 期权复盘", type="primary", key="gen_opt_review"):
+        payload = _build_options_payload()
+        ck = f"{updated_at}|{ai_model}|{len(options)}"
+        try:
+            res = _cached_options_review(ck, payload, ai_model)
+        except llm.LLMError as e:
+            st.error(f"AI 复盘失败：{e}")
+            res = None
+
+        if res:
+            if res.get("overview"):
+                st.markdown(f"### {res['overview']}")
+            if res.get("attribution_read"):
+                st.markdown("#### 🧮 涨跌归因")
+                st.write(res["attribution_read"])
+            cda, cea = st.columns(2)
+            with cda:
+                if res.get("decay_alert"):
+                    st.markdown("#### ⏳ 时间衰减警示")
+                    st.write(res["decay_alert"])
+            with cea:
+                if res.get("entry_read"):
+                    st.markdown("#### 🎯 进场/抄底")
+                    st.write(res["entry_read"])
+            if res.get("per_option"):
+                st.markdown("#### 📋 逐支点评")
+                for o in res["per_option"]:
+                    st.markdown(f"- **{o.get('option','')}**：{o.get('read','')}")
+            cac, crc = st.columns(2)
+            with cac:
+                if res.get("actions"):
+                    st.markdown("#### 🧭 可关注方向")
+                    for a in res["actions"]:
+                        st.markdown(f"- {a}")
+            with crc:
+                if res.get("risks"):
+                    st.markdown("#### ⚠️ 风险")
+                    for rk in res["risks"]:
+                        st.markdown(f"- {rk}")
+            u = res.get("_usage", {})
+            st.caption(
+                f"🤖 {res.get('_model','')} · {u.get('total_tokens','?')} tokens · "
+                f"~${res.get('_cost_usd',0):.4f} | AI 生成，非投资建议。"
+            )
+            with st.expander("🔎 查看喂给 AI 的原始数据"):
+                st.json(_build_options_payload())

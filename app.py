@@ -19,7 +19,7 @@ pg = st.navigation(
         "分析工具": [
             st.Page("pages/2_Momentum.py", title="📊 量能健康", icon="📊"),
             st.Page("pages/3_Watchlist.py", title="🔭 Watch List", icon="🔭"),
-            st.Page("pages/6_资讯.py", title="📰 行业资讯", icon="📰"),
+            st.Page("pages/6_News.py", title="📰 行业资讯", icon="📰"),
         ],
         "笔记 & 策略": [
             st.Page("pages/4_Notes.py", title="📓 交易策略笔记", icon="📓"),
