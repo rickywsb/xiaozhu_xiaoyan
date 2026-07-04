@@ -712,3 +712,54 @@ MFI<20 +1；反向对称扣分。**评分 ≥3 → 🟢疑似吸筹，≤-3 → 
 > 注：新增函数在运行中的 Streamlit 里需**重启服务**才能被 core 模块热加载（Streamlit 只重跑页面脚本、不会重新 import 已加载的 core 模块）。
 > `background_gradient` 需要 matplotlib（未安装），故表格用 emoji 判定列代替色阶，不引入新依赖。
 
+---
+
+## 13. 行业资讯聚合板块（新增）
+
+> **日期**: 2026-07-04　**状态**: ✅ 已上线（分析工具 → 📰 行业资讯）
+
+### 13.1 数据边界（重要）
+
+本板块聚合的是**公开新闻 / 新闻稿 RSS**，**不是**卖方深度研报或付费投研数据。
+真正的 TrendForce / Yole / 大行研报正文都在付费墙内、无公开 API。因此页面顶部
+明确标注「公开资讯聚合，非投研建议」。全部数据源**免费、无需 API key**。
+
+### 13.2 `core/news.py` — 资讯聚合引擎
+
+纯 `requests` + stdlib `xml.etree`（**未引入 feedparser 等新依赖**），兼容
+RSS 2.0 与 Atom 两种格式，单个源抓取失败自动跳过。
+
+| 函数 | 作用 |
+|---|---|
+| `fetch_google_news(query, limit)` | Google News RSS 按关键词搜索（`when:30d`，英文） |
+| `fetch_feed(source_name, url, limit)` | 抓取单个行业 RSS/Atom feed |
+| `fetch_ticker_news(tickers, limit_per)` | yfinance 逐票近期新闻（兼容新版 `content` 与旧版扁平结构） |
+| `fetch_theme(theme_name)` | 聚合某主题的关键词 Google News + 专属 feeds，去重按时间倒序 |
+| `theme_tickers(portfolio, sector_tag)` | 按 `sector`（存/光）挑出该赛道持仓 |
+| `portfolio_tickers(portfolio)` | 全部持仓标的（去 CASH） |
+| 内部：`_http_get / _parse_feed / _parse_date / _strip_html / _dedupe / _sort_by_date` | 抓取、解析、清洗、去重、排序 |
+
+**主题定义 `THEMES`**（关键词 + 专属 feed + 对应 sector 标签）：
+
+| 主题 | 关键词（Google News） | 专属 feed | sector |
+|---|---|---|---|
+| 💾 存储 | HBM / DRAM price / NAND / HBM4 / memory shortage… | **Blocks & Files** + **TrendForce**(`/news/feed/` 公开新闻稿) | 存 |
+| 🔦 光通信 | 800G / 1.6T / silicon photonics / CPO / DCI… | 无（纯关键词，噪声更少）| 光 |
+| 🔬 半导体大盘 | semiconductor / AI accelerator / TSMC capex / WFE | SEMI + EE Times | — |
+
+> feed 选型踩坑：TrendForce 的 `/presscenter/rss` 是 404，正确的是 `/news/feed/`；
+> Gazettabyte（Squarespace `?format=rss`）被 Cloudflare 403、Lightwave 各路径均 404，
+> 故光通信改为纯 Google News 关键词，实测相关性反而更高。
+
+### 13.3 `pages/6_资讯.py` — 资讯页面
+
+- 四个 tab：**💾 存储 / 🔦 光通信 / 🔬 半导体大盘 / 💼 我的持仓**
+- 主题 tab：展示关键词、专属源、**该赛道持仓**（按 `sector` 自动匹配）+ 卡片流
+- 我的持仓 tab：`multiselect` 选标的（默认前 10），yfinance 逐票新闻
+- 卡片：标题（超链接）+ 摘要 + 🗞来源 · 🕒相对时间（刚刚/N小时前/昨天/N天前/日期）
+- 缓存 30 分钟（`_cached_theme` / `_cached_ticker_news`）+ 手动「🔄 刷新资讯」（`.clear()` + rerun）
+- 已在 `app.py` 的「分析工具」组注册
+
+实测：存储 64 条、光通信 31 条、半导体大盘 44 条，均含新鲜内容（含 TrendForce
+「DRAM 现货价更新」这类研报口吻新闻稿）。
+
