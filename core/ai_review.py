@@ -187,3 +187,48 @@ def options_review(
         "per_option 覆盖数据里出现的主要期权；无历史 IV 样本时 entry_read 说明'样本不足'。"
     )
     return llm.chat_json(system, user, model=model, max_tokens=1800)
+
+
+# ─── 功能 D：每日综合日报 ─────────────────────────────────────────────────────
+
+def daily_report(
+    payload: dict,
+    *,
+    model: str = llm.DEFAULT_MODEL,
+) -> dict:
+    """把当日 持仓结构 / 量能 / 期权 / 资讯 汇成一份中文日报。
+
+    payload 结构（全部由页面用我们已算好的数字构造，LLM 不得臆造）：
+      {
+        "日期": "2026-07-04",
+        "组合概览": {总净值USD, 持仓数, 最大持仓, 板块权重(%)},
+        "量能": {领涨: [{ticker, direction, momentum, note?}], 领跌: [...], 吸筹亮点: [...], 派发预警: [...]},
+        "期权": {期权总市值, 净Delta敞口USD, 每日Theta损耗USD, Vega敞口, 时间衰减最快: [...], 归因: {}},
+        "资讯": [{theme, title, source}],
+      }
+    """
+    system = _GUARDRAIL + (
+        " 现在需要你写一份面向基金经理的**每日综合晨报**，要求条理清晰、抓重点、"
+        "把'持仓结构 / 量能 / 期权 / 行业资讯'四块串起来，并给出当日值得关注的点。"
+    )
+    user = (
+        "下面是今日更新后的组合数据，涵盖四个板块：持仓结构、量能信号、期权敞口、行业资讯。"
+        "请综合成一份中文日报，帮基金经理 1 分钟掌握全局。\n\n"
+        f"数据：\n{json.dumps(payload, ensure_ascii=False, indent=2)}\n\n"
+        "请严格输出如下 JSON：\n"
+        "{\n"
+        '  "headline": "一句话today综述（点出今日最重要的一点）",\n'
+        '  "market_note": "结合资讯的行业/市场背景，2~3 句",\n'
+        '  "portfolio": {"summary": "持仓结构点评（净值/集中度/板块）", "highlights": ["要点…"]},\n'
+        '  "momentum": {"summary": "量能概述", "leaders": [{"ticker": "XX", "note": "为何领涨"}], "laggards": [{"ticker": "XX", "note": "为何走弱"}]},\n'
+        '  "options": {"summary": "期权情况点评（敞口/衰减/进场）"},\n'
+        '  "news": {"summary": "资讯要点 2~3 句", "highlights": ["关键事件…"]},\n'
+        '  "actions": ["今日值得关注的方向或事项（中性表述，非指令）…"],\n'
+        '  "risks": ["需警惕的风险点…"]\n'
+        "}\n"
+        "每一块只用提供的数据，缺数据就说'数据不足'；leaders/laggards 从量能数据里选。"
+        "只要'期权'字段包含数字（如期权总市值>0），就必须在 options.summary 中"
+        "总结其敞口/时间衰减/归因，**不得**回答'无期权持仓'；"
+        "仅当'期权'为空对象 {} 时才说'无期权持仓'。"
+    )
+    return llm.chat_json(system, user, model=model, max_tokens=2000)

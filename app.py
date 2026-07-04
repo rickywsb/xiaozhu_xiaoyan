@@ -12,6 +12,7 @@ st.set_page_config(
 pg = st.navigation(
     {
         "投资组合": [
+            st.Page("pages/8_Daily.py", title="📅 每日日报", icon="📅"),
             st.Page("pages/1_Portfolio.py", title="💼 持仓净值", icon="💼"),
             st.Page("pages/5_Options_Review.py", title="🎯 期权复盘", icon="🎯"),
             st.Page("pages/7_AI_Review.py", title="🩺 AI 持仓诊断", icon="🩺"),
