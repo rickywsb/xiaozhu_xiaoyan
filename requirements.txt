@@ -5,3 +5,4 @@ pandas>=2.0
 numpy>=1.26
 plotly>=5.22
 requests>=2.31
+openai>=1.40

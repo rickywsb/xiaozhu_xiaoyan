@@ -10,6 +10,7 @@ import streamlit as st
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import config
 from core import news
+from core import llm, ai_review
 
 st.title("📰 行业资讯")
 st.caption(
@@ -35,6 +36,12 @@ def _cached_theme(theme_name: str) -> list[dict]:
 def _cached_ticker_news(tickers_key: str) -> list[dict]:
     tickers = tickers_key.split("|") if tickers_key else []
     return [i.as_dict() for i in news.fetch_ticker_news(tickers, limit_per=4)]
+
+
+@st.cache_data(show_spinner="🤖 AI 正在生成晨报…", ttl=1800)
+def _cached_digest(cache_key: str, items_by_theme: dict, holdings: list[str]) -> dict:
+    """cache_key 变化时重算（用日期+标题数拼成）。"""
+    return ai_review.news_digest(items_by_theme, holdings=holdings)
 
 
 # ─── 渲染工具 ─────────────────────────────────────────────────────────────────
@@ -89,6 +96,49 @@ portfolio = _load_portfolio()
 _refresh_button()
 
 theme_names = list(news.THEMES.keys())
+
+# ─── 🤖 AI 晨报 ───────────────────────────────────────────────────────────────
+with st.expander("🤖 AI 晨报（LLM 生成的中文要点摘要）", expanded=False):
+    st.caption("基于下方各主题资讯，用 OpenAI 生成中文晨报：主题要点 · 情绪 · 对持仓潜在影响。⚠️ AI 生成，非投资建议。")
+    if not llm.available():
+        st.info("未检测到 OPENAI_API_KEY。请在 Streamlit Secrets / 环境变量 / 本地 openaitoken.txt 配置后重试。")
+    elif st.button("📝 生成 AI 晨报", key="gen_digest"):
+        items_by_theme = {t: _cached_theme(t) for t in theme_names}
+        holdings = news.portfolio_tickers(portfolio)
+        cache_key = "|".join(f"{t}:{len(items_by_theme[t])}" for t in theme_names) + f"@{datetime.now(timezone.utc).date()}"
+        try:
+            digest = _cached_digest(cache_key, items_by_theme, holdings)
+        except llm.LLMError as e:
+            st.error(f"生成失败：{e}")
+        else:
+            ov = digest.get("overview")
+            if ov:
+                st.markdown(f"**📌 总览**\n\n{ov}")
+            _sent_emoji = {"利好": "🟢", "中性": "🟡", "利空": "🔴"}
+            for th in digest.get("themes", []):
+                emj = _sent_emoji.get(th.get("sentiment", ""), "⚪")
+                st.markdown(f"**{emj} {th.get('name','')}** · {th.get('sentiment','')}")
+                if th.get("summary"):
+                    st.write(th["summary"])
+                for hl in th.get("highlights", []):
+                    st.markdown(f"- {hl}")
+            impacts = digest.get("portfolio_impact", [])
+            if impacts:
+                st.markdown("**💼 对持仓的潜在影响**")
+                for im in impacts:
+                    st.markdown(f"- `{im.get('ticker','')}`：{im.get('note','')}")
+            risks = digest.get("risks", [])
+            if risks:
+                st.markdown("**⚠️ 风险提示**")
+                for r in risks:
+                    st.markdown(f"- {r}")
+            usage = digest.get("_usage", {})
+            if usage:
+                st.caption(
+                    f"🤖 {digest.get('_model','')} · {usage.get('total_tokens',0)} tokens "
+                    f"· ~${digest.get('_cost_usd',0):.4f}"
+                )
+
 tab_labels = [f"{news.THEMES[t]['emoji']} {t}" for t in theme_names] + ["💼 我的持仓"]
 tabs = st.tabs(tab_labels)
 

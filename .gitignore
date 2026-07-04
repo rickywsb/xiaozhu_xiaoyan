@@ -8,3 +8,9 @@ __pycache__/
 backups/
 .streamlit/secrets.toml
 
+# API keys / 密钥（切勿提交）
+openaitoken.txt
+*token*.txt
+*.key
+.env
+

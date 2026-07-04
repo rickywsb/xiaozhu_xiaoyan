@@ -763,3 +763,45 @@ RSS 2.0 与 Atom 两种格式，单个源抓取失败自动跳过。
 实测：存储 64 条、光通信 31 条、半导体大盘 44 条，均含新鲜内容（含 TrendForce
 「DRAM 现货价更新」这类研报口吻新闻稿）。
 
+---
+
+## 14. LLM 分析层：AI 晨报 + 持仓健康诊断（新增）
+
+> **日期**: 2026-07-04　**状态**: ✅ 已上线（OpenAI）
+
+### 14.1 定位与边界
+
+LLM 只做**解读层**：消费我们已经算好的量化信号（量能、吸筹、13F、资讯），
+输出人话的综合判断。**禁止 LLM 臆造价格/指标**，所有数字由我们提供（grounding）。
+全部输出强制 JSON + 低 temperature，页面渲染成卡片；每处标注「AI 生成，非投资建议」。
+
+### 14.2 `core/llm.py` — OpenAI 轻封装
+
+- **密钥三级读取**：`st.secrets["OPENAI_API_KEY"]`（Cloud 部署）→ 环境变量 → 本地 `openaitoken.txt`（开发兜底，已 gitignore）。`available()` 供页面判断是否显示按钮。
+- `chat_json(system, user, model, temperature=0.2, max_tokens)`：强制 `response_format={"type":"json_object"}`，返回 dict，附带 `_usage` / `_cost_usd`（粗估）/ `_model`。异常统一抛 `LLMError`，页面降级提示。
+- **模型分层**：`DEFAULT_MODEL="gpt-4o-mini"`（日常）、`DEEP_MODEL="gpt-4.1"`（深度）。
+- 依赖：`openai>=1.40`（已加入 requirements.txt，实测 2.44）。
+
+### 14.3 `core/ai_review.py` — 两个分析功能
+
+| 函数 | 吃什么 | 产出 JSON |
+|---|---|---|
+| `news_digest(items_by_theme, holdings)` | 资讯板块聚合结果（每主题前 10 条标题+摘要） | overview / themes[{name,sentiment,summary,highlights}] / portfolio_impact / risks |
+| `portfolio_diagnosis(holdings, sector_weights, news_headlines)` | 量能评分 + 吸筹信号 + 板块权重 + 资讯标题 | overall / health_score / concentration / sector_exposure / **divergences（信号背离）** / strengths / risks / watch |
+
+共用 `_GUARDRAIL` system 前言（严谨买方研究助理、只用给定数据、中文、非投资建议）。
+
+### 14.4 页面接入
+
+- **B 资讯晨报**：`pages/6_资讯.py` 顶部「🤖 AI 晨报」expander + 按钮，结果缓存 30 分钟（cache_key 含日期+各主题条数）。
+- **A 持仓诊断**：新页 `pages/7_AI_Review.py`（挂在「投资组合」组），模型档位单选 + 是否结合资讯复选 + 「🩺 生成持仓诊断」按钮。渲染健康分/集中度/赛道暴露/信号背离/亮点/风险/关注，底部显示 token 与成本，另有「查看喂给 AI 的原始数据」expander。
+
+### 14.5 踩坑：板块权重的货币换算
+
+诊断首版用动量模块的 `latest_close`（**原生货币**）× shares 算市值，导致
+韩元(000660.KS)/港元(7709.HK)持仓被严重高估，存储权重一度显示 99.3%。
+修复：改用 `price_cache.json` 里 **price_updater 已换算成 USD** 的 `prices`
+（与持仓净值页同源），修复后权重回归合理（存 37.7% / 光 35.4% / 配置 18.6% …）。
+
+> 成本参考：一次晨报或持仓诊断约 5k tokens、gpt-4o-mini 下 ~$0.0009，可忽略。
+
