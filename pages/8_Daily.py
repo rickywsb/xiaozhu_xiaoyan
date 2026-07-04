@@ -185,7 +185,15 @@ model = llm.DEEP_MODEL if model_label.startswith("gpt-4.1") else llm.DEFAULT_MOD
 
 cache_now = load_cache() or {}
 if cache_now.get("updated_at"):
-    st.caption(f"上次价格更新：{cache_now['updated_at']}")
+    upd = cache_now["updated_at"]
+    is_stale = not str(upd).startswith(date.today().isoformat())
+    if is_stale:
+        st.warning(
+            f"⚠️ 当前缓存价格为 **{upd}**，非今日行情。"
+            "点「📈 更新价格并生成日报」抓取最新价，再生成日报。"
+        )
+    else:
+        st.caption(f"✅ 价格已是今日最新：{upd}")
 
 col_go, col_skip = st.columns([2, 1])
 run_full = col_go.button("📈 更新价格并生成日报", type="primary", use_container_width=True)
@@ -247,6 +255,8 @@ if run_full or run_skip:
     m2.metric("📋 持仓数", ob["持仓数"])
     opt_v = payload["期权"].get("期权总市值") if payload["期权"] else None
     m3.metric("🎯 期权市值", f"${opt_v:,.0f}" if opt_v else "—")
+    st.caption(f"💵 价格更新时间：{cache.get('updated_at', '—')}"
+               + ("（使用现有缓存价格，可能非今日行情）" if run_skip else ""))
 
     if rep.get("headline"):
         st.markdown(f"## {rep['headline']}")
