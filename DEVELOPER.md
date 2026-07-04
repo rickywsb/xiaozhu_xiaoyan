@@ -666,3 +666,49 @@ Step 5  写 pages/1_Portfolio.py（表格 + 一键更新，先跑通逻辑）
 **每天点一次「🔄 一键更新价格」**（会写入当日快照），历史攒够后自动填充。
 这也符合"抄底时机"的本质：需一段 IV 历史才能判断当前 IV 算高还是低。
 
+---
+
+## 12. 主力/机构 吸筹信号 + 13F 机构持仓（新增）
+
+> **日期**: 2026-07-04　**状态**: ✅ 已上线（量能页第 3 个 tab）
+
+### 12.1 数据边界（重要）
+
+yfinance **只有**日线 OHLCV 与季度 13F 机构持仓，**没有** Level-2 逐笔大单 /
+主力资金实时净流入（属付费行情）。因此：
+- **量价代理信号**（12.2）：用公开量价行为**推断**吸筹/派发，非真实资金流向。
+- **13F 机构持仓**（12.3）：真实数据，但按季披露、滞后约 1~2 个月。
+两者互补：前者看短期动向，后者看中长期机构态度。页面均已明确标注，避免误导。
+
+### 12.2 `core/accumulation.py` — 量价吸筹/派发信号
+
+| 函数 | 作用 |
+|---|---|
+| `fetch_ohlcv_batch(tickers, period)` | 一次性批量下载所有持仓的 OHLCV（`yf.download`，含 Volume） |
+| `compute_signals(df)` | 单只股票算 6 个信号 + 综合评分 + 判定 |
+| `scan_holdings(portfolio)` | 扫描全部持仓，返回按评分降序的 DataFrame |
+
+六个信号（均基于日线 OHLCV）：`_cmf`(Chaikin 资金流,20)、`_obv_slope`(能量潮斜率,20)、
+`_vol_ratio`(量比)、`_ud_vol_ratio`(涨跌量比,20)、`_mfi`(资金流量指标,14)、放量突破(20日新高+量比>1.5)。
+
+评分：CMF>0.05 +2 / OBV上行 +1 / 涨跌量比>1.2 +1 / 放量上涨 +1 / 放量突破 +2 /
+MFI<20 +1；反向对称扣分。**评分 ≥3 → 🟢疑似吸筹，≤-3 → 🔴疑似派发，其余 🟡中性**。
+
+### 12.3 `core/accumulation.py` — 13F 机构持仓
+
+`institutional_summary(ticker, top_n=12)` 抓取：
+- `major_holders` → 机构持股占比 `inst_pct`、机构家数 `inst_count`、内部人持股 `insider_pct`
+- `institutional_holders` → Top 机构明细（机构/持股占比/股数/市值/季度变化 `pctChange`）、
+  披露日 `as_of`、**份额加权季度净增减 `net_pct`**（Σ(Shares×pctChange)/ΣShares，>0 净增持）、
+  增持/减持家数 `n_up/n_down`
+- 部分海外/小盘股无 13F 明细 → 优雅降级（净增减显示「—」）。
+
+### 12.4 `pages/2_Momentum.py` — 「🏦 主力吸筹」tab
+
+在原「📈 量能报告 / 🕯 技术图表」间插入第 3 个 tab：
+1. **吸筹信号扫描表** — 汇总卡（吸筹/中性/派发家数）+ 全持仓评分表 + 评分逻辑说明 + 逐股解读 expander。缓存 30 分钟（`_cached_accum`）。
+2. **🏛️ 机构 13F 持仓** — 按标的下拉选择，展示 机构持股%/家数/季度净增减/披露日 四个指标 + Top 机构明细表。缓存 6 小时（`_cached_13f`）。
+
+> 注：新增函数在运行中的 Streamlit 里需**重启服务**才能被 core 模块热加载（Streamlit 只重跑页面脚本、不会重新 import 已加载的 core 模块）。
+> `background_gradient` 需要 matplotlib（未安装），故表格用 emoji 判定列代替色阶，不引入新依赖。
+

@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import config
 from core.daily_momentum import PERIODS, score_holdings, fetch_histories, calc_metrics, DEFAULT_DECAY, DEFAULT_WINDOW
 from core.technical_analysis import get_ohlcv, build_candlestick_chart
+from core import accumulation as accum
 
 # ─── 工具 ─────────────────────────────────────────────────────────────────────
 
@@ -41,6 +42,17 @@ def _portfolio_hash(portfolio: dict) -> str:
 @st.cache_data(show_spinner=False, ttl=3600)
 def _cached_ohlcv(ticker: str, period: str) -> pd.DataFrame:
     return get_ohlcv(ticker, period=period)
+
+
+@st.cache_data(show_spinner="🏦 正在扫描主力吸筹信号…", ttl=1800)
+def _cached_accum(portfolio_hash: str) -> pd.DataFrame:
+    portfolio = json.loads(config.PORTFOLIO_PATH.read_text(encoding="utf-8"))
+    return accum.scan_holdings(portfolio)
+
+
+@st.cache_data(show_spinner=False, ttl=21600)
+def _cached_13f(ticker: str) -> dict | None:
+    return accum.institutional_summary(ticker)
 
 
 def _chart_options(portfolio: dict) -> list[tuple[str, str]]:
@@ -101,10 +113,92 @@ ph = _portfolio_hash(portfolio)
 with st.spinner("正在加载量能数据…"):
     df = _cached_score(ph, window, decay)
 
-tab_momentum, tab_chart = st.tabs(["📈 量能报告", "🕯 技术图表"])
+tab_momentum, tab_accum, tab_chart = st.tabs(["📈 量能报告", "🏦 主力吸筹", "🕯 技术图表"])
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 技术图表 TAB （独立于量能数据，先渲染以避免量能 st.stop 影响）
+# ═══════════════════════════════════════════════════════════════════════════════
+# 主力吸筹 TAB （量价行为代理信号）
+# ═══════════════════════════════════════════════════════════════════════════════
+with tab_accum:
+    st.subheader("🏦 主力/机构 吸筹·派发 信号")
+    st.caption("基于日线量价行为的**代理信号**：CMF 资金流 / OBV 能量潮 / 量比 / "
+               "涨跌量比 / MFI / 放量突破。⚠️ yfinance 无 Level-2 逐笔大单数据，"
+               "本页为行为推断，非真实主力资金流向，仅供辅助判断。")
+
+    accum_df = _cached_accum(ph)
+    if accum_df.empty:
+        st.warning("暂无有效数据，请检查持仓 ticker 或稍后重试。")
+    else:
+        n_buy = int((accum_df["评分"] >= 3).sum())
+        n_sell = int((accum_df["评分"] <= -3).sum())
+        n_neu = len(accum_df) - n_buy - n_sell
+        m1, m2, m3 = st.columns(3)
+        m1.metric("🟢 疑似吸筹", n_buy)
+        m2.metric("🟡 中性", n_neu)
+        m3.metric("🔴 疑似派发", n_sell)
+
+        st.dataframe(
+            accum_df.drop(columns=["_reasons"]).style.format({
+                "量比": "{:.2f}", "CMF": "{:+.3f}", "涨跌量比": "{:.2f}",
+                "MFI": "{:.0f}", "OBV斜率": "{:+.4f}",
+            }, na_rep="—"),
+            use_container_width=True, hide_index=True,
+        )
+
+        st.caption("**评分逻辑**：CMF>0.05 +2 / OBV上行 +1 / 涨跌量比>1.2 +1 / "
+                   "放量上涨 +1 / 放量突破新高 +2 / MFI<20 +1；反向对称扣分。"
+                   "评分 ≥3 判定吸筹，≤-3 判定派发。")
+
+        with st.expander("📋 各股信号解读"):
+            for _, r in accum_df.iterrows():
+                st.markdown(f"**{r['股票']} ({r['代码']})** — {r['判定']}（评分 {r['评分']}）")
+                if r["_reasons"]:
+                    for rs in str(r["_reasons"]).split("；"):
+                        if rs:
+                            st.markdown(f"- {rs}")
+
+    # ── 机构 13F 持仓（季度真实数据，作为参考）──────────────────────────────
+    st.divider()
+    st.subheader("🏛️ 机构 13F 持仓（季度参考）")
+    st.caption("来自 SEC 13F 披露的**真实**机构持仓，但按季申报、滞后约 1~2 个月，"
+               "适合看中长期机构态度，与上方实时量价信号互补。")
+
+    accum_options = _chart_options(portfolio)
+    if accum_options:
+        labels_13f = [o[0] for o in accum_options]
+        sel_label_13f = st.selectbox("选择标的查看机构持仓", labels_13f, index=0, key="inst_ticker")
+        sel_13f_ticker = dict((l, t) for l, t in accum_options)[sel_label_13f]
+
+        with st.spinner(f"加载 {sel_13f_ticker} 机构持仓…"):
+            info = _cached_13f(sel_13f_ticker)
+
+        if not info:
+            st.info(f"暂无 {sel_13f_ticker} 的机构持仓数据（部分海外/小盘股 yfinance 无 13F）。")
+        else:
+            g1, g2, g3, g4 = st.columns(4)
+            g1.metric("机构持股占比", f"{info['inst_pct']:.1%}" if info["inst_pct"] else "—")
+            g2.metric("机构家数", f"{int(info['inst_count']):,}" if info["inst_count"] else "—")
+            if info["net_pct"] is not None:
+                arrow = "🟢 净增持" if info["net_pct"] > 0 else ("🔴 净减持" if info["net_pct"] < 0 else "持平")
+                g3.metric("Top机构季度净增减", f"{info['net_pct']:+.1%}", delta=arrow,
+                          help="Top 机构按持股份额加权的季度环比增减仓；>0=整体加仓")
+            else:
+                g3.metric("Top机构季度净增减", "—")
+            g4.metric("数据截至", info["as_of"] or "—",
+                      help=f"增持 {info['n_up']} 家 / 减持 {info['n_down']} 家"
+                           if info["n_up"] is not None else "")
+
+            if info["top"] is not None and not info["top"].empty:
+                st.dataframe(
+                    info["top"].style.format({
+                        "持股占比": "{:.2%}", "股数": "{:,.0f}",
+                        "市值": "${:,.0f}", "季度变化": "{:+.1%}",
+                    }, na_rep="—"),
+                    use_container_width=True, hide_index=True,
+                )
+                st.caption("「季度变化」为各机构相对上一季的持股变动；+100% 通常代表新建仓或翻倍。")
+
 # ═══════════════════════════════════════════════════════════════════════════════
 with tab_chart:
     st.subheader("🕯 个股技术分析")
