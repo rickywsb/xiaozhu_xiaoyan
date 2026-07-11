@@ -101,7 +101,7 @@ else:
     ))
     wf.update_layout(title="组合期权涨跌归因（本期）", height=360,
                      margin=dict(l=10, r=10, t=40, b=10))
-    st.plotly_chart(wf, use_container_width=True)
+    st.plotly_chart(wf, width="stretch")
 
     # 逐支明细
     rows = []
@@ -125,7 +125,7 @@ else:
             "时间 Θ": "${:,.1f}", "IV V": "${:,.0f}", "残差": "${:,.0f}",
             "标的Δ价": "{:+.2f}", "ΔIV(点)": "{:+.2f}",
         }, na_rep="—"),
-        use_container_width=True, hide_index=True,
+        width="stretch", hide_index=True,
     )
     st.caption("解读：**IV V 为大额负数** = 主要因隐含波动率收缩（IV crush）而跌；"
                "**标的 Δ 为负** = 因标的下跌而跌；**时间 Θ** 恒为缓慢负向损耗。")
@@ -151,7 +151,7 @@ st.dataframe(
         "Theta/日": "${:,.2f}", "日损耗率": "{:.2%}",
         "未来7日≈": "${:,.0f}", "未来30日≈": "${:,.0f}", "当前市值": "${:,.0f}",
     }, na_rep="—"),
-    use_container_width=True, hide_index=True,
+    width="stretch", hide_index=True,
 )
 st.caption("Theta/日 越负、日损耗率越高，说明该期权被时间吃得越快；"
            "临近到期（剩余天数少）时衰减会加速，「未来N日」为按当前速度的线性粗估。")
@@ -184,7 +184,7 @@ st.dataframe(
     df_sig.drop(columns=["_reasons"]).style.format({
         "当前IV": "{:.1%}", "IV Rank": "{:.0%}", "IV分位": "{:.0%}", "S/K": "{:.2f}",
     }, na_rep="—"),
-    use_container_width=True, hide_index=True,
+    width="stretch", hide_index=True,
 )
 if not has_iv_hist:
     st.info("IV Rank / 分位需要历史快照积累（每天点一次「🔄 一键更新价格」）。"
@@ -212,7 +212,7 @@ if iv_series:
     fig.update_layout(height=360, yaxis_tickformat=".0%",
                       margin=dict(l=10, r=10, t=30, b=10),
                       legend=dict(orientation="h"))
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
     st.caption("IV 处于自身历史低位时买入期权更便宜（抄底成本低）；高位时买方偏贵。")
 
 

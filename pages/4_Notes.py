@@ -125,7 +125,7 @@ notes = _list_notes()
 with st.sidebar:
     st.subheader("📋 笔记列表")
 
-    if st.button("➕ 新建笔记", type="primary", use_container_width=True):
+    if st.button("➕ 新建笔记", type="primary", width="stretch"):
         st.session_state["active_note_id"] = _new_note_id()
         st.session_state["note_mode"] = "edit"
         st.session_state["new_note"] = True
@@ -147,7 +147,7 @@ with st.sidebar:
             label = f"{'▶ ' if is_active else ''}{n['date']}  {n['title']}"
             if n["tags"]:
                 label += f"\n`{'` `'.join(n['tags'][:2])}`"
-            if st.button(label, key=f"btn_{n['id']}", use_container_width=True):
+            if st.button(label, key=f"btn_{n['id']}", width="stretch"):
                 st.session_state["active_note_id"] = n["id"]
                 st.session_state["note_mode"] = "view"
                 st.session_state.pop("new_note", None)
@@ -191,18 +191,18 @@ with col_btns:
     btn_cols = st.columns(3)
     with btn_cols[0]:
         if note_mode == "view":
-            if st.button("✏️ 编辑", use_container_width=True):
+            if st.button("✏️ 编辑", width="stretch"):
                 st.session_state["note_mode"] = "edit"
                 st.rerun()
         else:
-            if st.button("👁 预览", use_container_width=True):
+            if st.button("👁 预览", width="stretch"):
                 st.session_state["note_mode"] = "view"
                 st.session_state.pop("new_note", None)
                 st.rerun()
     with btn_cols[1]:
-        save_clicked = st.button("💾 保存", type="primary", use_container_width=True)
+        save_clicked = st.button("💾 保存", type="primary", width="stretch")
     with btn_cols[2]:
-        if not is_new_note and st.button("🗑 删除", use_container_width=True):
+        if not is_new_note and st.button("🗑 删除", width="stretch"):
             st.session_state["confirm_delete"] = True
 
 # 删除确认

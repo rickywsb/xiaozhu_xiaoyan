@@ -102,7 +102,7 @@ with st.sidebar:
 # 顶栏
 col_title, col_btn = st.columns([5, 1])
 with col_btn:
-    refresh = st.button("⚡ 刷新量能", type="primary", use_container_width=True)
+    refresh = st.button("⚡ 刷新量能", type="primary", width="stretch")
 
 if refresh:
     st.cache_data.clear()
@@ -143,7 +143,7 @@ with tab_accum:
                 "量比": "{:.2f}", "CMF": "{:+.3f}", "涨跌量比": "{:.2f}",
                 "MFI": "{:.0f}", "OBV斜率": "{:+.4f}",
             }, na_rep="—"),
-            use_container_width=True, hide_index=True,
+            width="stretch", hide_index=True,
         )
 
         st.caption("**评分逻辑**：CMF>0.05 +2 / OBV上行 +1 / 涨跌量比>1.2 +1 / "
@@ -195,7 +195,7 @@ with tab_accum:
                         "持股占比": "{:.2%}", "股数": "{:,.0f}",
                         "市值": "${:,.0f}", "季度变化": "{:+.1%}",
                     }, na_rep="—"),
-                    use_container_width=True, hide_index=True,
+                    width="stretch", hide_index=True,
                 )
                 st.caption("「季度变化」为各机构相对上一季的持股变动；+100% 通常代表新建仓或翻倍。")
 
@@ -238,7 +238,7 @@ with tab_chart:
                 show_macd=show_macd,
                 show_bollinger=show_boll,
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
 
             # 简要快照
             last = ohlcv.iloc[-1]
@@ -299,7 +299,7 @@ with tab_momentum:
         margin=dict(t=10, b=10, l=10, r=80),
         height=max(320, n_ok * 22),
     )
-    st.plotly_chart(fig_heat, use_container_width=True)
+    st.plotly_chart(fig_heat, width="stretch")
 
     st.divider()
 
@@ -348,7 +348,7 @@ with tab_momentum:
         paper_bgcolor="rgba(0,0,0,0)",
         xaxis=dict(showgrid=True, gridcolor="rgba(128,128,128,0.15)"),
     )
-    st.plotly_chart(fig_rank, use_container_width=True)
+    st.plotly_chart(fig_rank, width="stretch")
 
     # 预警提示
     warn_df = df[df["composite"] < threshold]
@@ -445,7 +445,7 @@ with tab_momentum:
             plot_bgcolor="rgba(0,0,0,0)",
             xaxis=dict(showgrid=True, gridcolor="rgba(128,128,128,0.15)"),
         )
-        st.plotly_chart(fig_detail, use_container_width=True)
+        st.plotly_chart(fig_detail, width="stretch")
     else:
         st.info(f"暂无 {selected} 的历史价格数据。")
 

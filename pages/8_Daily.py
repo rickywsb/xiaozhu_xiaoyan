@@ -196,8 +196,8 @@ if cache_now.get("updated_at"):
         st.caption(f"✅ 价格已是今日最新：{upd}")
 
 col_go, col_skip = st.columns([2, 1])
-run_full = col_go.button("📈 更新价格并生成日报", type="primary", use_container_width=True)
-run_skip = col_skip.button("⚡ 用现有价格直接生成", use_container_width=True,
+run_full = col_go.button("📈 更新价格并生成日报", type="primary", width="stretch")
+run_skip = col_skip.button("⚡ 用现有价格直接生成", width="stretch",
                            help="跳过抓价，用最近一次缓存价格生成日报")
 
 

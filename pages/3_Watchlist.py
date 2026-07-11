@@ -152,7 +152,7 @@ tab_scan, tab_track, tab_edit = st.tabs(["📊 扫描排名", "📈 周度追踪
 with tab_scan:
     col_info, col_btn = st.columns([5, 1])
     with col_btn:
-        if st.button("⚡ 运行扫描", type="primary", use_container_width=True):
+        if st.button("⚡ 运行扫描", type="primary", width="stretch"):
             st.cache_data.clear()
             st.rerun()
 
@@ -222,7 +222,7 @@ with tab_scan:
         xaxis=dict(showgrid=True, gridcolor="rgba(128,128,128,0.15)"),
         yaxis=dict(showgrid=True, gridcolor="rgba(128,128,128,0.15)"),
     )
-    st.plotly_chart(fig_scatter, use_container_width=True)
+    st.plotly_chart(fig_scatter, width="stretch")
 
     st.divider()
 
@@ -263,7 +263,7 @@ with tab_scan:
         paper_bgcolor="rgba(0,0,0,0)",
         xaxis=dict(showgrid=True, gridcolor="rgba(128,128,128,0.15)"),
     )
-    st.plotly_chart(fig_rank, use_container_width=True)
+    st.plotly_chart(fig_rank, width="stretch")
 
     # 预警
     warn_df = df[df["composite"] < threshold]
@@ -290,7 +290,7 @@ with tab_scan:
     for col in ["5日均收益","20日均收益","30日波动","10日回撤"]:
         if col in show.columns:
             show[col] = show[col].map(lambda v: f"{v*100:+.2f}%" if pd.notna(v) else "N/A")
-    st.dataframe(show, use_container_width=True, hide_index=True)
+    st.dataframe(show, width="stretch", hide_index=True)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -303,7 +303,7 @@ with tab_track:
 
     col_save, col_spacer = st.columns([2, 5])
     with col_save:
-        if st.button("💾 保存今日快照", use_container_width=True):
+        if st.button("💾 保存今日快照", width="stretch"):
             wk2 = _wl_key(watchlist)
             df2 = _cached_scan(wk2, window, decay)
             if df2.empty:
@@ -318,7 +318,7 @@ with tab_track:
     elif len(snap_files) == 1:
         st.info(f"只有一份快照（{snap_files[0].stem}），再次运行并保存后可比较变化。")
         curr_snap = _load_snapshot(snap_files[0])
-        st.dataframe(curr_snap, use_container_width=True, hide_index=True)
+        st.dataframe(curr_snap, width="stretch", hide_index=True)
     else:
         snap_names = [f.stem for f in snap_files]
         col_a, col_b = st.columns(2)
@@ -370,14 +370,14 @@ with tab_track:
                 plot_bgcolor="rgba(0,0,0,0)",
                 paper_bgcolor="rgba(0,0,0,0)",
             )
-            st.plotly_chart(fig_diff, use_container_width=True)
+            st.plotly_chart(fig_diff, width="stretch")
 
             # 完整对比表
             with st.expander("📋 完整对比表"):
                 show_diff = diff[["rank_curr", "display", "ticker", "排名变化",
                                   "composite", "direction"]].copy()
                 show_diff.columns = ["当前排名", "名称", "Ticker", "排名变化", "综合分", "方向"]
-                st.dataframe(show_diff, use_container_width=True, hide_index=True)
+                st.dataframe(show_diff, width="stretch", hide_index=True)
 
         # 历史快照列表
         with st.expander("🗂 历史快照文件"):
@@ -396,7 +396,7 @@ with tab_edit:
     edited = st.data_editor(
         edit_df,
         num_rows="dynamic",
-        use_container_width=True,
+        width="stretch",
         column_config={"Ticker": st.column_config.TextColumn("YF Ticker", width="large")},
         hide_index=True,
     )

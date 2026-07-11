@@ -222,7 +222,7 @@ with col_info:
     else:
         st.caption("⚠️ 尚未获取价格，请点击右侧「一键更新」")
 with col_btn:
-    if st.button("🔄 一键更新价格", type="primary", use_container_width=True):
+    if st.button("🔄 一键更新价格", type="primary", width="stretch"):
         with st.spinner("正在获取最新价格…（约 20-30 秒）"):
             cache = update_all_prices(portfolio)
             st.cache_data.clear()
@@ -282,7 +282,7 @@ with tab_view:
             ),
             "持股数":   st.column_config.NumberColumn("持股数", format="%.4g"),
         },
-        use_container_width=True, hide_index=True, height=500,
+        width="stretch", hide_index=True, height=500,
     )
     if snapshots.latest_prior_snapshot() is None:
         st.caption("ℹ️ 当日涨跌需至少两天快照对比；今天是首次记录，明天更新后即可显示。")
@@ -332,7 +332,7 @@ with tab_view:
                 "Theta/日": st.column_config.NumberColumn("Theta/日", format="%.4f"),
                 "Vega":     st.column_config.NumberColumn("Vega", format="%.3f"),
             },
-            use_container_width=True, hide_index=True,
+            width="stretch", hide_index=True,
         )
         st.caption(
             "IV 由 yfinance 提供；Delta/Gamma/Theta/Vega 由 Black-Scholes 计算。"
@@ -361,7 +361,7 @@ with tab_view:
             uniformtext_minsize=9,
             uniformtext_mode="hide",
         )
-        st.plotly_chart(fig_pie, use_container_width=True)
+        st.plotly_chart(fig_pie, width="stretch")
     with chart_r:
         st.subheader("市值 Top 15")
         top15 = df.dropna(subset=["市值 USD"]).head(15).sort_values("市值 USD")
@@ -378,7 +378,7 @@ with tab_view:
             plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
             xaxis=dict(showgrid=True, gridcolor="rgba(128,128,128,0.2)"),
         )
-        st.plotly_chart(fig_bar, use_container_width=True)
+        st.plotly_chart(fig_bar, width="stretch")
 
     st.divider()
     st.subheader("板块汇总")
@@ -393,7 +393,7 @@ with tab_view:
                 max_value=float(summary["占比"].max()),
             ),
         },
-        hide_index=True, use_container_width=True)
+        hide_index=True, width="stretch")
 
 # ═══════════════════════════════════════════════════
 # TAB 2 — 净值历史
@@ -464,7 +464,7 @@ with tab_history:
             xaxis=dict(showgrid=False),
             hovermode="x unified",
         )
-        st.plotly_chart(fig_line, use_container_width=True)
+        st.plotly_chart(fig_line, width="stretch")
 
         # 柱状图：每日涨跌幅
         bars = view.dropna(subset=["change_pct"])
@@ -486,14 +486,14 @@ with tab_history:
                 yaxis=dict(showgrid=True, gridcolor="rgba(128,128,128,0.15)"),
                 xaxis=dict(showgrid=False),
             )
-            st.plotly_chart(fig_bar, use_container_width=True)
+            st.plotly_chart(fig_bar, width="stretch")
 
         with st.expander("📋 历史数据明细"):
             tbl = view[["date", "total_value", "change", "change_pct"]].copy()
             tbl["date"] = tbl["date"].dt.strftime("%Y-%m-%d")
             tbl.columns = ["日期", "总净值", "较前日变化", "涨跌幅%"]
             tbl = tbl.sort_values("日期", ascending=False)
-            st.dataframe(tbl, use_container_width=True, hide_index=True)
+            st.dataframe(tbl, width="stretch", hide_index=True)
 
 # ═══════════════════════════════════════════════════
 # TAB 3 — 编辑持仓
@@ -523,7 +523,7 @@ with tab_edit:
                 "货币", options=CURRENCIES, help="原始计价货币，自动换算为 USD"),
             "备注": st.column_config.TextColumn("备注"),
         },
-        use_container_width=True,
+        width="stretch",
         height=520,
         key="pos_editor",
     )
@@ -550,7 +550,7 @@ with tab_edit:
                         help="留空=自动中值；填入则手动覆盖"),
             "备注":   st.column_config.TextColumn("备注"),
         },
-        use_container_width=True,
+        width="stretch",
         key="options_editor",
     )
 
@@ -564,14 +564,14 @@ with tab_edit:
             "名称":     st.column_config.TextColumn("名称 ✱", required=True),
             "市值 USD": st.column_config.NumberColumn("市值 USD", format="$%,.2f", min_value=0),
         },
-        use_container_width=True,
+        width="stretch",
         key="manual_editor",
     )
 
     st.divider()
     btn_l, btn_r = st.columns(2)
     with btn_l:
-        if st.button("💾 保存持仓配置", use_container_width=True):
+        if st.button("💾 保存持仓配置", width="stretch"):
             _save_portfolio(portfolio, edited_pos, edited_manual, edited_options)
             st.cache_data.clear()
             ok, msg = sync_to_github(
@@ -586,7 +586,7 @@ with tab_edit:
                 st.success("✅ 持仓配置已保存！切换到「📊 持仓概览」查看。")
             st.rerun()
     with btn_r:
-        if st.button("🚀 保存 + 获取最新价格", type="primary", use_container_width=True):
+        if st.button("🚀 保存 + 获取最新价格", type="primary", width="stretch"):
             updated = _save_portfolio(portfolio, edited_pos, edited_manual, edited_options)
             st.cache_data.clear()
             ok, msg = sync_to_github(
