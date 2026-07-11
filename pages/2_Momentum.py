@@ -13,8 +13,10 @@ import streamlit as st
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import config
 from core.daily_momentum import PERIODS, score_holdings, fetch_histories, calc_metrics, DEFAULT_DECAY, DEFAULT_WINDOW
+from core.daily_momentum import score_holdings_ema, EMA_SPANS
 from core.technical_analysis import get_ohlcv, build_candlestick_chart
 from core import accumulation as accum
+from core import llm, ai_review
 
 # ─── 工具 ─────────────────────────────────────────────────────────────────────
 
@@ -48,6 +50,12 @@ def _cached_ohlcv(ticker: str, period: str) -> pd.DataFrame:
 def _cached_accum(portfolio_hash: str) -> pd.DataFrame:
     portfolio = json.loads(config.PORTFOLIO_PATH.read_text(encoding="utf-8"))
     return accum.scan_holdings(portfolio)
+
+
+@st.cache_data(show_spinner="🚦 正在计算 EMA 量能评分…", ttl=1800)
+def _cached_ema(portfolio_hash: str) -> pd.DataFrame:
+    portfolio = json.loads(config.PORTFOLIO_PATH.read_text(encoding="utf-8"))
+    return score_holdings_ema(portfolio)
 
 
 @st.cache_data(show_spinner=False, ttl=21600)
@@ -113,12 +121,172 @@ ph = _portfolio_hash(portfolio)
 with st.spinner("正在加载量能数据…"):
     df = _cached_score(ph, window, decay)
 
-tab_momentum, tab_accum, tab_chart = st.tabs(["📈 量能报告", "🏦 主力吸筹", "🕯 技术图表"])
+tab_ema, tab_momentum, tab_accum, tab_chart = st.tabs(
+    ["🚦 EMA量能", "📈 量能报告", "🏦 主力吸筹", "🕯 技术图表"])
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# EMA 量能评分 TAB （红绿灯 · 0-100 分 · AI 解读）
+# ═══════════════════════════════════════════════════════════════════════════════
+with tab_ema:
+    st.subheader("🚦 EMA 量能评分")
+    s_span, m_span, l_span = EMA_SPANS
+    st.caption(
+        f"基于 **EMA{s_span}/{m_span}/{l_span}** 的趋势打分（0-100）："
+        f"位置(现价vsEMA{m_span}) 30% · 排列(多头/空头) 30% · "
+        f"斜率(EMA{m_span}近5日) 25% · 乖离(防追高) 15%。"
+        f"🟢≥70 强 / 🟡40-69 中 / 🔴<40 弱。仅供辅助研究，非投资建议。"
+    )
+
+    ema_df = _cached_ema(ph)
+    if ema_df.empty:
+        st.warning("暂无有效数据，请检查持仓 ticker 或点击「⚡ 刷新量能」重试。")
+    else:
+        n_strong = int((ema_df["ema_score"] >= 70).sum())
+        n_mid    = int(((ema_df["ema_score"] >= 40) & (ema_df["ema_score"] < 70)).sum())
+        n_weak   = int((ema_df["ema_score"] < 40).sum())
+        avg_score = float(ema_df["ema_score"].mean())
+        e1, e2, e3, e4 = st.columns(4)
+        e1.metric("🟢 强势 (≥70)", n_strong)
+        e2.metric("🟡 中性 (40-69)", n_mid)
+        e3.metric("🔴 弱势 (<40)", n_weak)
+        e4.metric("组合平均量能分", f"{avg_score:.0f}")
+
+        show_ema = ema_df.copy()
+        show_ema["灯"] = show_ema["light"]
+        show_ema["乖离%"] = show_ema["dev"] * 100
+        show_ema["斜率%(5日)"] = show_ema["slope"] * 100
+        show_ema = show_ema.rename(columns={
+            "display": "股票", "ema_score": "量能分",
+            "state": "状态", "price": "现价", "ema_mid": f"EMA{m_span}",
+        })
+        cols = ["灯", "股票", "量能分", "状态", "现价", f"EMA{m_span}", "乖离%", "斜率%(5日)"]
+        st.dataframe(
+            show_ema[cols],
+            column_config={
+                "量能分": st.column_config.ProgressColumn(
+                    "量能分", format="%d", min_value=0, max_value=100,
+                    help="0-100，越高趋势越强",
+                ),
+                "现价": st.column_config.NumberColumn("现价", format="$%.2f"),
+                f"EMA{m_span}": st.column_config.NumberColumn(f"EMA{m_span}", format="$%.2f"),
+                "乖离%": st.column_config.NumberColumn("乖离%", format="%+.1f%%"),
+                "斜率%(5日)": st.column_config.NumberColumn("斜率%(5日)", format="%+.2f%%"),
+            },
+            width="stretch", hide_index=True,
+            height=min(560, 80 + len(show_ema) * 35),
+        )
+
+        warn_ema = ema_df[ema_df["ema_score"] < 40]
+        if not warn_ema.empty:
+            st.warning(
+                "🔴 **量能预警**（分数 <40，多为破位/空头排列）：  \n"
+                + "  ".join(f"`{r['display']} {r['ema_score']:.0f}`"
+                           for _, r in warn_ema.iterrows())
+            )
+
+        # ── 🤖 AI 量能解读 ────────────────────────────────────────────────
+        st.divider()
+        st.markdown("#### 🤖 AI 量能解读")
+        if not llm.available():
+            st.info("未检测到 OpenAI Key。在 Streamlit Secrets 配置 `OPENAI_API_KEY` 后即可生成 AI 解读。")
+        else:
+            ema_ai_model = st.radio(
+                "模型档位",
+                options=[llm.DEFAULT_MODEL, llm.DEEP_MODEL],
+                format_func=lambda m: "gpt-4o-mini（便宜·日常）" if m == llm.DEFAULT_MODEL
+                else "gpt-4.1（更强·深度）",
+                horizontal=True, key="ema_ai_model",
+            )
+
+            def _build_ema_payload() -> dict:
+                # 仓位占比：从价格缓存估算股票市值权重
+                try:
+                    from core.price_updater import load_cache
+                    _cache = load_cache()
+                    _prices = _cache.get("prices", {}) if _cache else {}
+                except Exception:
+                    _prices = {}
+                weights: dict[str, float] = {}
+                for acc in portfolio.get("accounts", []):
+                    for pos in acc.get("positions", []):
+                        t = pos["yf_ticker"]
+                        px_ = _prices.get(t)
+                        sh = pos.get("shares")
+                        if px_ and sh:
+                            weights[t] = weights.get(t, 0.0) + px_ * sh
+                tot = sum(weights.values()) or 1.0
+
+                per = []
+                for _, r in ema_df.iterrows():
+                    per.append({
+                        "股票": r["display"],
+                        "量能分": int(r["ema_score"]),
+                        "灯": r["light"],
+                        "状态": r["state"],
+                        "乖离%": round(r["dev"] * 100, 1),
+                        "斜率%(5日)": round(r["slope"] * 100, 2),
+                        "占比%": round(weights.get(r["ticker"], 0.0) / tot * 100, 1),
+                    })
+                return {
+                    "EMA参数": f"EMA{s_span}/{m_span}/{l_span}",
+                    "评分口径": "0-100；🟢≥70 / 🟡40-69 / 🔴<40；由 位置/排列/斜率/乖离 加权",
+                    "分布": {"🟢强": n_strong, "🟡中": n_mid, "🔴弱": n_weak,
+                            "平均分": round(avg_score, 1)},
+                    "个股": per,
+                }
+
+            @st.cache_data(show_spinner="🤖 AI 正在解读量能…", ttl=1800)
+            def _cached_ema_review(cache_key: str, payload: dict, model: str) -> dict:
+                return ai_review.momentum_review(payload, model=model)
+
+            if st.button("🩺 生成 AI 量能解读", type="primary", key="gen_ema_review"):
+                payload = _build_ema_payload()
+                ck = f"{ph}|{ema_ai_model}|{round(avg_score)}|{len(ema_df)}"
+                try:
+                    res = _cached_ema_review(ck, payload, ema_ai_model)
+                except llm.LLMError as e:
+                    st.error(f"AI 解读失败：{e}")
+                    res = None
+
+                if res:
+                    if res.get("overview"):
+                        st.markdown(f"### {res['overview']}")
+                    ch, cw = st.columns(2)
+                    with ch:
+                        if res.get("healthy"):
+                            st.markdown("#### 🟢 趋势健康")
+                            for o in res["healthy"]:
+                                st.markdown(f"- **{o.get('ticker','')}**：{o.get('note','')}")
+                    with cw:
+                        if res.get("warning"):
+                            st.markdown("#### 🔴 需警惕破位")
+                            for o in res["warning"]:
+                                st.markdown(f"- **{o.get('ticker','')}**：{o.get('note','')}")
+                    if res.get("accelerating"):
+                        st.markdown("#### 🚀 动能加速")
+                        for o in res["accelerating"]:
+                            st.markdown(f"- **{o.get('ticker','')}**：{o.get('note','')}")
+                    ca, cr = st.columns(2)
+                    with ca:
+                        if res.get("actions"):
+                            st.markdown("#### 🧭 可关注方向")
+                            for a in res["actions"]:
+                                st.markdown(f"- {a}")
+                    with cr:
+                        if res.get("risks"):
+                            st.markdown("#### ⚠️ 风险")
+                            for rk in res["risks"]:
+                                st.markdown(f"- {rk}")
+                    u = res.get("_usage", {})
+                    st.caption(
+                        f"🤖 {res.get('_model','')} · {u.get('total_tokens','?')} tokens · "
+                        f"~${res.get('_cost_usd',0):.4f} | AI 生成，非投资建议。"
+                    )
+                    with st.expander("🔎 查看喂给 AI 的原始数据"):
+                        st.json(_build_ema_payload())
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 技术图表 TAB （独立于量能数据，先渲染以避免量能 st.stop 影响）
-# ═══════════════════════════════════════════════════════════════════════════════
-# 主力吸筹 TAB （量价行为代理信号）
 # ═══════════════════════════════════════════════════════════════════════════════
 with tab_accum:
     st.subheader("🏦 主力/机构 吸筹·派发 信号")

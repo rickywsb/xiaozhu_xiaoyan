@@ -85,6 +85,115 @@ def _zscore(s: pd.Series) -> pd.Series:
     return (s - mu) / sigma
 
 
+# ─── EMA 量能评分（0-100 + 红绿灯）─────────────────────────────────────────────
+EMA_SPANS = (10, 20, 60)          # 短 / 中 / 中长
+
+
+def _ema(series: pd.Series, span: int) -> pd.Series:
+    return series.ewm(span=span, adjust=False).mean()
+
+
+def _clip(v: float, lo: float, hi: float) -> float:
+    return max(lo, min(hi, v))
+
+
+def ema_momentum(close: pd.Series,
+                 spans: tuple[int, int, int] = EMA_SPANS) -> dict | None:
+    """
+    基于 EMA 的量能评分（0-100 + 🟢🟡🔴）。数据不足返回 None。
+
+    四个维度加权：
+      ① 位置 30%   现价 vs EMA中期（站上/跌破，±5% 映射满分）
+      ② 排列 30%   EMA短>中>长 多头排列（两条不等式各半）
+      ③ 斜率 25%   EMA中期近 5 日斜率（±3% 映射满分）
+      ④ 乖离 15%   过度正乖离惩罚（>8% 起扣分，防追高）
+    """
+    c = close.dropna().sort_index()
+    s_span, m_span, l_span = spans
+    if len(c) < m_span + 6:
+        return None
+
+    ema_s = _ema(c, s_span)
+    ema_m = _ema(c, m_span)
+    ema_l = _ema(c, l_span)
+
+    price = float(c.iloc[-1])
+    e_s, e_m, e_l = float(ema_s.iloc[-1]), float(ema_m.iloc[-1]), float(ema_l.iloc[-1])
+    if e_m <= 0:
+        return None
+
+    dev_m = price / e_m - 1                       # 现价对 EMA 中期的乖离
+
+    # ① 位置
+    pos_score = _clip(50 + dev_m / 0.05 * 50, 0, 100)
+    # ② 排列
+    up = int(e_s > e_m) + int(e_m > e_l)
+    align_score = up / 2 * 100
+    # ③ 斜率（EMA 中期近 5 日变化）
+    slope = float(ema_m.iloc[-1] / ema_m.iloc[-6] - 1)
+    slope_score = _clip(50 + slope / 0.03 * 50, 0, 100)
+    # ④ 乖离惩罚（正乖离 >8% 起扣，>20% 归零）
+    over = max(0.0, dev_m - 0.08)
+    dev_score = _clip(100 - over / 0.12 * 100, 0, 100)
+
+    score = round(0.30 * pos_score + 0.30 * align_score
+                  + 0.25 * slope_score + 0.15 * dev_score)
+
+    if score >= 70:
+        light = "🟢"
+    elif score >= 40:
+        light = "🟡"
+    else:
+        light = "🔴"
+
+    align_txt = "多头排列" if up == 2 else ("空头排列" if up == 0 else "均线纠缠")
+    slope_txt = "上行" if slope > 0.005 else ("下行" if slope < -0.005 else "走平")
+    pos_txt = f"站上EMA{m_span}" if price >= e_m else f"跌破EMA{m_span}"
+    hot = "·乖离过大防追高" if dev_m > 0.15 else ""
+    state = f"{align_txt}·{pos_txt}·{slope_txt}{hot}"
+
+    return {
+        "ema_score": score,
+        "light":     light,
+        "state":     state,
+        "price":     round(price, 2),
+        "ema_mid":   round(e_m, 2),
+        "dev":       round(dev_m, 4),      # 乖离（小数）
+        "slope":     round(slope, 4),      # 中期斜率（5 日，小数）
+        "align":     align_txt,
+    }
+
+
+def score_holdings_ema(portfolio: dict,
+                       spans: tuple[int, int, int] = EMA_SPANS) -> pd.DataFrame:
+    """对持仓做 EMA 量能评分，返回按分数降序的 DataFrame。"""
+    import config
+
+    ticker_map: dict[str, str] = {}
+    for acc in portfolio.get("accounts", []):
+        for pos in acc.get("positions", []):
+            yf_t = pos["yf_ticker"]
+            if yf_t.upper() != config.CASH_TICKER:
+                ticker_map[yf_t] = pos["display"]
+
+    histories = fetch_histories(list(ticker_map.keys()))
+
+    rows = []
+    for yf_t, display in ticker_map.items():
+        close = histories.get(yf_t)
+        if close is None:
+            continue
+        r = ema_momentum(close, spans)
+        if r is None:
+            continue
+        rows.append({"ticker": yf_t, "display": display, **r})
+
+    if not rows:
+        return pd.DataFrame()
+
+    return pd.DataFrame(rows).sort_values("ema_score", ascending=False).reset_index(drop=True)
+
+
 # ─── 价格下载 ─────────────────────────────────────────────────────────────────
 
 def fetch_histories(tickers: list[str], period: str = FETCH_PERIOD) -> dict[str, pd.Series]:

@@ -29,6 +29,27 @@ def _load_portfolio() -> dict:
     return json.loads(config.PORTFOLIO_PATH.read_text(encoding="utf-8"))
 
 
+def _portfolio_hash(portfolio: dict) -> str:
+    tickers = sorted(
+        pos["yf_ticker"]
+        for acc in portfolio.get("accounts", [])
+        for pos in acc.get("positions", [])
+    )
+    return "|".join(tickers)
+
+
+@st.cache_data(show_spinner="🚦 计算 EMA 量能分…", ttl=1800)
+def _cached_ema_scores(portfolio_hash: str) -> dict[str, tuple]:
+    """{yf_ticker: (量能分, 红绿灯)}，供持仓表旁标注。"""
+    from core.daily_momentum import score_holdings_ema
+    portfolio = json.loads(config.PORTFOLIO_PATH.read_text(encoding="utf-8"))
+    ema_df = score_holdings_ema(portfolio)
+    if ema_df.empty:
+        return {}
+    return {r["ticker"]: (int(r["ema_score"]), r["light"])
+            for _, r in ema_df.iterrows()}
+
+
 def _portfolio_to_edit_df(portfolio: dict) -> pd.DataFrame:
     rows = [
         {
@@ -269,9 +290,22 @@ with tab_view:
     all_sectors = ["全部"] + sorted(df["板块"].dropna().unique().tolist())
     sel = st.selectbox("筛选板块", all_sectors, label_visibility="collapsed")
     disp = df if sel == "全部" else df[df["板块"] == sel]
+
+    # 量能分（EMA10/20/60）标注到持仓旁
+    ema_scores = _cached_ema_scores(_portfolio_hash(portfolio))
+    def _ema_cell(row):
+        if row.get("期权"):
+            return None
+        sc = ema_scores.get(row["_key"])
+        return f"{sc[1]} {sc[0]}" if sc else None
+    disp = disp.copy()
+    disp["量能"] = disp.apply(_ema_cell, axis=1)
+
     st.dataframe(
-        disp[["股票", "板块", "持股数", "现价 USD", "市值 USD", "涨跌%", "日变化 USD", "占比", "货币", "备注"]],
+        disp[["股票", "板块", "量能", "持股数", "现价 USD", "市值 USD", "涨跌%", "日变化 USD", "占比", "货币", "备注"]],
         column_config={
+            "量能": st.column_config.TextColumn(
+                "量能", help="EMA10/20/60 趋势打分 0-100；🟢≥70 / 🟡40-69 / 🔴<40（点「量能健康」页看详情）"),
             "现价 USD": st.column_config.NumberColumn("现价 USD", format="$%.2f"),
             "市值 USD": st.column_config.NumberColumn("市值 USD", format="$%,.0f"),
             "涨跌%":    st.column_config.NumberColumn("当日涨跌%", format="%+.2f%%"),
