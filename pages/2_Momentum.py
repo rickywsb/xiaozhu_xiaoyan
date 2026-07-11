@@ -13,7 +13,13 @@ import streamlit as st
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import config
 from core.daily_momentum import PERIODS, score_holdings, fetch_histories, calc_metrics, DEFAULT_DECAY, DEFAULT_WINDOW
-from core.daily_momentum import score_holdings_ema, EMA_SPANS
+try:
+    from core.daily_momentum import score_holdings_ema, EMA_SPANS
+    _EMA_AVAILABLE = True
+except ImportError:
+    # 云端刚更新代码但进程未完全重启时，旧模块可能缺少新函数——优雅降级而非崩溃
+    _EMA_AVAILABLE = False
+    EMA_SPANS = (10, 20, 60)
 from core.technical_analysis import get_ohlcv, build_candlestick_chart
 from core import accumulation as accum
 from core import llm, ai_review
@@ -137,8 +143,11 @@ with tab_ema:
         f"🟢≥70 强 / 🟡40-69 中 / 🔴<40 弱。仅供辅助研究，非投资建议。"
     )
 
-    ema_df = _cached_ema(ph)
-    if ema_df.empty:
+    ema_df = _cached_ema(ph) if _EMA_AVAILABLE else pd.DataFrame()
+    if not _EMA_AVAILABLE:
+        st.info("🔄 EMA 量能模块刚更新，云端进程需重启后生效："
+                "右下角 **Manage app → ⋮ → Reboot app**（重启后本页即恢复）。")
+    elif ema_df.empty:
         st.warning("暂无有效数据，请检查持仓 ticker 或点击「⚡ 刷新量能」重试。")
     else:
         n_strong = int((ema_df["ema_score"] >= 70).sum())

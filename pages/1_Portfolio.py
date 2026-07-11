@@ -292,7 +292,10 @@ with tab_view:
     disp = df if sel == "全部" else df[df["板块"] == sel]
 
     # 量能分（EMA10/20/60）标注到持仓旁
-    ema_scores = _cached_ema_scores(_portfolio_hash(portfolio))
+    try:
+        ema_scores = _cached_ema_scores(_portfolio_hash(portfolio))
+    except Exception:
+        ema_scores = {}
     def _ema_cell(row):
         if row.get("期权"):
             return None
