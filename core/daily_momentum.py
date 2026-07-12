@@ -312,6 +312,174 @@ def fib_alerts(portfolio: dict, lookback: int = FIB_LOOKBACK) -> pd.DataFrame:
     return df.sort_values(["trigger", "retr"], ascending=[False, False]).reset_index(drop=True)
 
 
+# ─── Volume Profile 筹码分布预警（POC / VAH / VAL）─────────────────────────────
+VP_LOOKBACK   = 120        # 回看交易日（约半年）
+VP_BINS       = 24         # 价格分箱数
+VP_VALUE_AREA = 0.70       # 价值区覆盖的成交量比例
+VP_NEAR       = 0.03       # 贴近关键位阈值（3%）
+
+
+def volume_profile(ohlcv: pd.DataFrame,
+                   lookback: int = VP_LOOKBACK,
+                   bins: int = VP_BINS,
+                   va: float = VP_VALUE_AREA) -> dict | None:
+    """
+    成交量分布（volume-by-price）：按价格分箱累加成交量。
+      · POC (Point of Control)  成交量最大的价位（最强磁吸/支撑阻力）
+      · VAH / VAL               包住 va(默认70%)成交量的价值区上/下沿
+    每日成交量在其 [Low, High] 区间内均摊到重叠的价格箱。数据不足返回 None。
+    """
+    df = ohlcv.dropna().tail(lookback)
+    if len(df) < 30:
+        return None
+    lo = float(df["Low"].min())
+    hi = float(df["High"].max())
+    if hi <= lo:
+        return None
+
+    edges = np.linspace(lo, hi, bins + 1)
+    vol = np.zeros(bins)
+    for low, high, v in zip(df["Low"].to_numpy(), df["High"].to_numpy(), df["Volume"].to_numpy()):
+        low, high, v = float(low), float(high), float(v)
+        if v <= 0 or high < low:
+            continue
+        lo_i = int(np.searchsorted(edges, low,  side="right") - 1)
+        hi_i = int(np.searchsorted(edges, high, side="right") - 1)
+        lo_i = max(0, min(bins - 1, lo_i))
+        hi_i = max(0, min(bins - 1, hi_i))
+        vol[lo_i:hi_i + 1] += v / (hi_i - lo_i + 1)
+
+    total = float(vol.sum())
+    if total <= 0:
+        return None
+
+    centers = (edges[:-1] + edges[1:]) / 2
+    poc_i = int(vol.argmax())
+    poc = float(centers[poc_i])
+
+    # 价值区：从 POC 向两侧扩张，直到累计成交量 ≥ va*total
+    target = va * total
+    lo_i = hi_i = poc_i
+    acc = float(vol[poc_i])
+    while acc < target and (lo_i > 0 or hi_i < bins - 1):
+        left  = float(vol[lo_i - 1]) if lo_i > 0 else -1.0
+        right = float(vol[hi_i + 1]) if hi_i < bins - 1 else -1.0
+        if right >= left:
+            hi_i += 1
+            acc += float(vol[hi_i])
+        else:
+            lo_i -= 1
+            acc += float(vol[lo_i])
+
+    return {
+        "poc":   poc,
+        "vah":   float(edges[hi_i + 1]),
+        "val":   float(edges[lo_i]),
+        "low":   lo,
+        "high":  hi,
+        "hist":  vol.tolist(),
+        "edges": edges.tolist(),
+    }
+
+
+def vp_signal(ohlcv: pd.DataFrame, lookback: int = VP_LOOKBACK) -> dict | None:
+    """
+    基于筹码分布判断现价相对价值区(VAH/VAL/POC)的位置并给出预警。
+
+    采用**贴近触发**（只在价格真正与关键位交互时预警，避免趋势股价格远离
+    历史价值区时误报"早已突破"）：现价落在 POC/VAH/VAL 任一位 ±VP_NEAR 内才触发。
+      · 上破 VAH（价≥VAH 且贴近）→ 放量走强(🟢)
+      · 测试 VAH（价<VAH 且贴近）→ 逼近上沿阻力(🟡)
+      · 跌破 VAL（价≤VAL 且贴近）→ 跌出价值区(🔴)
+      · 测试 VAL（价>VAL 且贴近）→ 回踩下沿支撑(🟡)
+      · 回踩 POC（贴近 POC）→ 磁吸/决策区(🟡)
+    远离所有关键位（延伸段/区间中部）不触发。
+    """
+    vp = volume_profile(ohlcv, lookback)
+    if vp is None:
+        return None
+    price = float(ohlcv["Close"].dropna().iloc[-1])
+    poc, vah, val = vp["poc"], vp["vah"], vp["val"]
+    if poc <= 0 or price <= 0:
+        return None
+
+    d_poc = (price - poc) / price
+    d_vah = (price - vah) / price
+    d_val = (price - val) / price
+
+    # 位置（上下文信息灯）
+    if price > vah:
+        light, zone = "🟢", "价值区上方"
+    elif price < val:
+        light, zone = "🔴", "价值区下方"
+    else:
+        light, zone = "🟡", "价值区内"
+
+    # 最近的关键位
+    levels = [("POC", poc, d_poc), ("VAH", vah, d_vah), ("VAL", val, d_val)]
+    name, _lvl_p, lvl_d = min(levels, key=lambda x: abs(x[2]))
+
+    trigger, category = False, ""
+    if abs(lvl_d) <= VP_NEAR:
+        trigger = True
+        if name == "POC":
+            category, light = "回踩POC", "🟡"
+        elif name == "VAH":
+            category, light = ("上破VAH", "🟢") if price >= vah else ("测试VAH", "🟡")
+        else:  # VAL
+            category, light = ("跌破VAL", "🔴") if price <= val else ("测试VAL", "🟡")
+
+    signal = f"{zone}·贴近{name}" if trigger else f"{zone}·远离关键位"
+
+    return {
+        "vp_light":  light,
+        "vp_signal": signal,
+        "category":  category,
+        "trigger":   trigger,
+        "nearest":   name,
+        "price":     round(price, 2),
+        "poc":       round(poc, 2),
+        "vah":       round(vah, 2),
+        "val":       round(val, 2),
+        "d_poc":     round(d_poc, 4),       # 现价距 POC（小数，正=上方）
+        "d_near":    round(lvl_d, 4),        # 现价距最近关键位（小数）
+        "va_width":  round((vah - val) / poc, 4),   # 价值区宽度（相对 POC，越小越密集）
+    }
+
+
+def vp_alerts(portfolio: dict, lookback: int = VP_LOOKBACK) -> pd.DataFrame:
+    """对持仓计算筹码分布信号，返回 DataFrame（触发预警的排在最前）。"""
+    import config
+
+    ticker_map: dict[str, str] = {}
+    for acc in portfolio.get("accounts", []):
+        for pos in acc.get("positions", []):
+            yf_t = pos["yf_ticker"]
+            if yf_t.upper() != config.CASH_TICKER:
+                ticker_map[yf_t] = pos["display"]
+
+    histories = fetch_ohlcv_histories(list(ticker_map.keys()))
+
+    rows = []
+    for yf_t, display in ticker_map.items():
+        ohlcv = histories.get(yf_t)
+        if ohlcv is None:
+            continue
+        r = vp_signal(ohlcv, lookback)
+        if r is None:
+            continue
+        rows.append({"ticker": yf_t, "display": display, **r})
+
+    if not rows:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(rows)
+    # 触发优先，再按距最近关键位由近到远（真正贴近的在前）
+    df["_absd"] = df["d_near"].abs()
+    df = df.sort_values(["trigger", "_absd"], ascending=[False, True]).drop(columns="_absd")
+    return df.reset_index(drop=True)
+
+
 # ─── 价格下载 ─────────────────────────────────────────────────────────────────
 
 def fetch_histories(tickers: list[str], period: str = FETCH_PERIOD) -> dict[str, pd.Series]:
@@ -347,6 +515,48 @@ def fetch_histories(tickers: list[str], period: str = FETCH_PERIOD) -> dict[str,
         for t in real_tickers:
             if t in close_df.columns:
                 result[t] = close_df[t].dropna()
+
+    return result
+
+
+def fetch_ohlcv_histories(tickers: list[str], period: str = FETCH_PERIOD) -> dict[str, pd.DataFrame]:
+    """
+    批量下载 OHLCV 历史（成交量分布 / 筹码分析用）。
+    返回 {yf_ticker: DataFrame[High, Low, Close, Volume]}。
+    """
+    import config
+    real_tickers = [t for t in tickers if t.upper() != config.CASH_TICKER]
+    if not real_tickers:
+        return {}
+
+    try:
+        raw = yf.download(
+            real_tickers,
+            period=period,
+            auto_adjust=True,
+            progress=False,
+            threads=True,
+        )
+    except Exception:
+        return {}
+
+    result: dict[str, pd.DataFrame] = {}
+    fields = ["High", "Low", "Close", "Volume"]
+
+    if len(real_tickers) == 1:
+        if not all(f in raw.columns for f in fields):
+            return {}
+        df = raw[fields].dropna()
+        if not df.empty:
+            result[real_tickers[0]] = df
+    else:
+        for t in real_tickers:
+            try:
+                df = pd.DataFrame({f: raw[f][t] for f in fields}).dropna()
+                if not df.empty:
+                    result[t] = df
+            except Exception:
+                continue
 
     return result
 

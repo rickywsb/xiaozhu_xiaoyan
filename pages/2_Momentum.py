@@ -16,6 +16,7 @@ from core.daily_momentum import PERIODS, score_holdings, fetch_histories, calc_m
 try:
     from core.daily_momentum import score_holdings_ema, EMA_SPANS
     from core.daily_momentum import fib_alerts, FIB_RATIOS, FIB_LOOKBACK
+    from core.daily_momentum import vp_alerts, VP_LOOKBACK, VP_VALUE_AREA
     _EMA_AVAILABLE = True
 except ImportError:
     # 云端刚更新代码但进程未完全重启时，旧模块可能缺少新函数——优雅降级而非崩溃
@@ -23,6 +24,8 @@ except ImportError:
     EMA_SPANS = (10, 20, 60)
     FIB_RATIOS = (0.236, 0.382, 0.5, 0.618, 0.786)
     FIB_LOOKBACK = 120
+    VP_LOOKBACK = 120
+    VP_VALUE_AREA = 0.70
 from core.technical_analysis import get_ohlcv, build_candlestick_chart
 from core import accumulation as accum
 from core import llm, ai_review
@@ -71,6 +74,12 @@ def _cached_ema(portfolio_hash: str) -> pd.DataFrame:
 def _cached_fib(portfolio_hash: str, lookback: int) -> pd.DataFrame:
     portfolio = json.loads(config.PORTFOLIO_PATH.read_text(encoding="utf-8"))
     return fib_alerts(portfolio, lookback)
+
+
+@st.cache_data(show_spinner="📊 正在计算筹码分布预警…", ttl=1800)
+def _cached_vp(portfolio_hash: str, lookback: int) -> pd.DataFrame:
+    portfolio = json.loads(config.PORTFOLIO_PATH.read_text(encoding="utf-8"))
+    return vp_alerts(portfolio, lookback)
 
 
 @st.cache_data(show_spinner=False, ttl=21600)
@@ -136,8 +145,8 @@ ph = _portfolio_hash(portfolio)
 with st.spinner("正在加载量能数据…"):
     df = _cached_score(ph, window, decay)
 
-tab_ema, tab_fib, tab_momentum, tab_accum, tab_chart = st.tabs(
-    ["🚦 EMA量能", "🎯 Fib预警", "📈 量能报告", "🏦 主力吸筹", "🕯 技术图表"])
+tab_ema, tab_fib, tab_vp, tab_momentum, tab_accum, tab_chart = st.tabs(
+    ["🚦 EMA量能", "🎯 Fib预警", "📊 筹码分布", "📈 量能报告", "🏦 主力吸筹", "🕯 技术图表"])
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # EMA 量能评分 TAB （红绿灯 · 0-100 分 · AI 解读）
@@ -498,6 +507,211 @@ with tab_fib:
                     )
                     with st.expander("🔎 查看喂给 AI 的原始数据"):
                         st.json(_build_fib_payload())
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 筹码分布预警 TAB （Volume Profile · POC/VAH/VAL · 只列触发预警 · AI 解读）
+# ═══════════════════════════════════════════════════════════════════════════════
+with tab_vp:
+    st.subheader("📊 筹码分布预警（Volume Profile）")
+    st.caption(
+        f"按近 **{VP_LOOKBACK} 交易日（约半年）** 的日线成交量分价格区间统计，"
+        f"找出 **POC**（成交最密集价位·最强磁吸）与 **VAH/VAL**（包住 {VP_VALUE_AREA:.0%} "
+        "成交量的价值区上/下沿）。**只列出现价贴近关键位(±3%)的持仓**："
+        "🟢上破VAH · 🟡测试VAH/测试VAL/回踩POC · 🔴跌破VAL。"
+        "远离关键位（延伸段/区间中部）不预警。并附 EMA 量能分做**共振**参考。仅供辅助研究，非投资建议。"
+    )
+
+    vp_df = _cached_vp(ph, VP_LOOKBACK) if _EMA_AVAILABLE else pd.DataFrame()
+    if not _EMA_AVAILABLE:
+        st.info("🔄 筹码分布模块刚更新，云端进程需重启后生效："
+                "右下角 **Manage app → ⋮ → Reboot app**（重启后本页即恢复）。")
+    elif vp_df.empty:
+        st.warning("暂无有效数据，请检查持仓 ticker 或点击「⚡ 刷新量能」重试。")
+    else:
+        # EMA 量能分映射（共振参考）
+        ema_map_vp: dict[str, int] = {}
+        if _EMA_AVAILABLE:
+            try:
+                _ema_for_vp = _cached_ema(ph)
+                if not _ema_for_vp.empty:
+                    ema_map_vp = {r["ticker"]: int(r["ema_score"])
+                                  for _, r in _ema_for_vp.iterrows()}
+            except Exception:
+                ema_map_vp = {}
+
+        triggered_vp = vp_df[vp_df["trigger"]].copy()
+        n_up   = int((triggered_vp["category"] == "上破VAH").sum()) if not triggered_vp.empty else 0
+        n_down = int((triggered_vp["category"] == "跌破VAL").sum()) if not triggered_vp.empty else 0
+        n_watch = len(triggered_vp) - n_up - n_down   # 测试VAH/测试VAL/回踩POC
+
+        v1, v2, v3, v4 = st.columns(4)
+        v1.metric("🚨 触发预警", len(triggered_vp))
+        v2.metric("🟢 上破VAH", n_up)
+        v3.metric("🔴 跌破VAL", n_down)
+        v4.metric("🟡 测试/回踩", n_watch)
+
+        if triggered_vp.empty:
+            st.success("✅ 当前无持仓触发筹码预警——多数标的远离关键筹码位（延伸段或区间中部）。")
+        else:
+            show_vp = triggered_vp.copy()
+            show_vp["灯"] = show_vp["vp_light"]
+            show_vp["距POC%"] = show_vp["d_poc"] * 100
+            show_vp["价值区宽度%"] = show_vp["va_width"] * 100
+            show_vp["量能分"] = show_vp["ticker"].map(ema_map_vp)
+            show_vp = show_vp.rename(columns={
+                "display": "股票", "category": "预警", "vp_signal": "信号",
+                "price": "现价", "poc": "POC", "vah": "VAH", "val": "VAL",
+            })
+            cols = ["灯", "股票", "预警", "信号", "现价", "POC", "VAH", "VAL",
+                    "距POC%", "价值区宽度%", "量能分"]
+            st.dataframe(
+                show_vp[cols],
+                column_config={
+                    "现价": st.column_config.NumberColumn("现价", format="$%.2f"),
+                    "POC": st.column_config.NumberColumn("POC", format="$%.2f",
+                        help="成交最密集价位（最强支撑/阻力/磁吸）"),
+                    "VAH": st.column_config.NumberColumn("VAH", format="$%.2f",
+                        help="价值区上沿"),
+                    "VAL": st.column_config.NumberColumn("VAL", format="$%.2f",
+                        help="价值区下沿"),
+                    "距POC%": st.column_config.NumberColumn("距POC%", format="%+.1f%%",
+                        help="现价相对 POC；正=上方"),
+                    "价值区宽度%": st.column_config.NumberColumn("价值区宽度%", format="%.1f%%",
+                        help="价值区宽度（相对 POC）；越小筹码越集中"),
+                    "量能分": st.column_config.ProgressColumn("量能分", format="%d",
+                        min_value=0, max_value=100, help="EMA 量能分，共振参考"),
+                },
+                width="stretch", hide_index=True,
+                height=min(500, 80 + len(show_vp) * 35),
+            )
+
+            down_rows = triggered_vp[triggered_vp["category"] == "跌破VAL"]
+            if not down_rows.empty:
+                st.warning(
+                    "🔴 **跌出价值区**（跌破 VAL，筹码支撑失守风险）：  \n"
+                    + "  ".join(f"`{r['display']} ${r['price']:.2f}<VAL${r['val']:.2f}`"
+                               for _, r in down_rows.iterrows())
+                )
+
+        with st.expander("📖 怎么读这张筹码预警表"):
+            st.markdown(
+                "- **POC（控制点）**：近半年成交量最大的价位，是最强的支撑/阻力与磁吸位，"
+                "价格常反复回踩。\n"
+                "- **VAH / VAL（价值区上/下沿）**：包住约 70% 成交量的区间边界。区间内=公允震荡；"
+                "**上破 VAH**=多头掌控、有效放量走强；**跌破 VAL**=筹码支撑失守、转弱。\n"
+                "- **回踩 POC（±2%）**：多空成本交汇的决策区，容易变盘——需结合量能看方向。\n"
+                "- **价值区宽度**：越窄说明筹码越集中，一旦突破意义越大；越宽说明分散、突破可信度低。\n"
+                "- **量能分共振**：上破VAH + 量能🟢=偏多共振；跌破VAL + 量能🔴=偏淡共振。\n"
+                "- 与 EMA(趋势)、Fib(几何回撤) 一起看效果最好，切勿单独据此操作。"
+            )
+
+        # ── 🤖 AI 筹码预警解读 ────────────────────────────────────────────
+        st.divider()
+        st.markdown("#### 🤖 AI 筹码预警解读")
+        if triggered_vp.empty:
+            st.caption("当前无触发项，无需 AI 解读。")
+        elif not llm.available():
+            st.info("未检测到 OpenAI Key。在 Streamlit Secrets 配置 `OPENAI_API_KEY` 后即可生成 AI 解读。")
+        else:
+            vp_ai_model = st.radio(
+                "模型档位",
+                options=[llm.DEFAULT_MODEL, llm.DEEP_MODEL],
+                format_func=lambda m: "gpt-4o-mini（便宜·日常）" if m == llm.DEFAULT_MODEL
+                else "gpt-4.1（更强·深度）",
+                horizontal=True, key="vp_ai_model",
+            )
+
+            def _build_vp_payload() -> dict:
+                # 仓位占比：从价格缓存估算股票市值权重
+                try:
+                    from core.price_updater import load_cache
+                    _cache = load_cache()
+                    _prices = _cache.get("prices", {}) if _cache else {}
+                except Exception:
+                    _prices = {}
+                weights: dict[str, float] = {}
+                for acc in portfolio.get("accounts", []):
+                    for pos in acc.get("positions", []):
+                        t = pos["yf_ticker"]
+                        px_ = _prices.get(t)
+                        sh = pos.get("shares")
+                        if px_ and sh:
+                            weights[t] = weights.get(t, 0.0) + px_ * sh
+                tot = sum(weights.values()) or 1.0
+
+                per = []
+                for _, r in triggered_vp.iterrows():
+                    per.append({
+                        "股票": r["display"],
+                        "灯": r["vp_light"],
+                        "信号": r["vp_signal"],
+                        "类别": r["category"],
+                        "现价": r["price"],
+                        "POC": r["poc"], "VAH": r["vah"], "VAL": r["val"],
+                        "距POC%": round(r["d_poc"] * 100, 1),
+                        "价值区宽度%": round(r["va_width"] * 100, 1),
+                        "量能分": ema_map_vp.get(r["ticker"]),
+                        "占比%": round(weights.get(r["ticker"], 0.0) / tot * 100, 1),
+                    })
+                return {
+                    "回看窗口": f"{VP_LOOKBACK} 交易日",
+                    "口径": "近半年日线成交量按价格分箱；POC=成交最密集价位；"
+                            "VAH/VAL=价值区上下沿；贴近关键位(±3%)才预警：🟢上破VAH / "
+                            "🔴跌破VAL / 🟡测试VAH·测试VAL·回踩POC",
+                    "组合概览": {"触发数": len(triggered_vp), "上破VAH": n_up,
+                                "跌破VAL": n_down, "测试/回踩": n_watch},
+                    "触发预警": per,
+                }
+
+            @st.cache_data(show_spinner="🤖 AI 正在解读筹码分布…", ttl=1800)
+            def _cached_vp_review(cache_key: str, payload: dict, model: str) -> dict:
+                return ai_review.vp_review(payload, model=model)
+
+            if st.button("🩺 生成 AI 筹码解读", type="primary", key="gen_vp_review"):
+                payload = _build_vp_payload()
+                ck = f"{ph}|{vp_ai_model}|{len(triggered_vp)}|{n_up}|{n_down}"
+                try:
+                    res = _cached_vp_review(ck, payload, vp_ai_model)
+                except llm.LLMError as e:
+                    st.error(f"AI 解读失败：{e}")
+                    res = None
+
+                if res:
+                    if res.get("overview"):
+                        st.markdown(f"### {res['overview']}")
+                    cu, cd = st.columns(2)
+                    with cu:
+                        if res.get("breakout"):
+                            st.markdown("#### 🟢 上破价值区·关注")
+                            for o in res["breakout"]:
+                                st.markdown(f"- **{o.get('ticker','')}**：{o.get('note','')}")
+                    with cd:
+                        if res.get("breakdown"):
+                            st.markdown("#### 🔴 跌出价值区·警惕")
+                            for o in res["breakdown"]:
+                                st.markdown(f"- **{o.get('ticker','')}**：{o.get('note','')}")
+                    if res.get("at_poc"):
+                        st.markdown("#### 🟡 回踩 POC·变盘观察")
+                        for o in res["at_poc"]:
+                            st.markdown(f"- **{o.get('ticker','')}**：{o.get('note','')}")
+                    ca, cr = st.columns(2)
+                    with ca:
+                        if res.get("actions"):
+                            st.markdown("#### 🧭 可关注方向")
+                            for a in res["actions"]:
+                                st.markdown(f"- {a}")
+                    with cr:
+                        if res.get("risks"):
+                            st.markdown("#### ⚠️ 风险")
+                            for rk in res["risks"]:
+                                st.markdown(f"- {rk}")
+                    u = res.get("_usage", {})
+                    st.caption(
+                        f"🤖 {res.get('_model','')} · {u.get('total_tokens','?')} tokens · "
+                        f"~${res.get('_cost_usd',0):.4f} | AI 生成，非投资建议。"
+                    )
+                    with st.expander("🔎 查看喂给 AI 的原始数据"):
+                        st.json(_build_vp_payload())
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 技术图表 TAB （独立于量能数据，先渲染以避免量能 st.stop 影响）

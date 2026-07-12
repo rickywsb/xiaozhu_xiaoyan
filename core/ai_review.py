@@ -306,9 +306,44 @@ def fib_review(
         '  "support_watch": [{"ticker": "XX", "note": "回踩到哪个 fib 支撑、量能是否共振、为何值得关注"}],\n'
         '  "breakdown": [{"ticker": "XX", "note": "为何破位转弱（跌破 78.6%/量能同步走弱）"}],\n'
         '  "actions": ["可考虑关注的方向或动作（中性表述，非指令）…"],\n'
-        '  "risks": ["需警惕的风险点（如高仓位却破位、假支撑）…"]\n'
-        "}\n"
         "support_watch/breakdown 从数据中选取代表性标的即可，不必穷举；"
+        "优先点名仓位占比大的持仓。数据不足时相应字段给空数组。"
+    )
+    return llm.chat_json(system, user, model=model, max_tokens=1600)
+
+
+def vp_review(
+    payload: dict,
+    *,
+    model: str = llm.DEFAULT_MODEL,
+) -> dict:
+    """对持仓的 Volume Profile（筹码分布）预警做一次自然语言解读（结合 EMA 量能）。"""
+    system = _GUARDRAIL + (
+        " 你精通成交量分布（Volume Profile）与筹码分析，理解 POC(成交最密集价位)、"
+        "VAH/VAL(价值区上下沿) 的支撑阻力含义，能结合 EMA 量能趋势，"
+        "判断哪些持仓放量站上价值区(强势)、哪些跌出价值区(弱势)、哪些回踩 POC 面临变盘，"
+        "并说明筹码信号与量能是否共振。"
+    )
+    user = (
+        "下面是一支半导体组合中**触发筹码分布(Volume Profile)预警**的持仓（我们已用近半年"
+        "日线成交量按价格分箱自算好 POC/VAH/VAL 与信号，并附 EMA 量能分做共振参考）。\n"
+        "请做一次中文预警解读，帮基金经理回答：**哪些放量站上价值区值得关注、"
+        "哪些跌出价值区需警惕、哪些回踩 POC 可能变盘、筹码与量能是否共振**，并结合仓位占比点出轻重。\n\n"
+        f"数据：\n{json.dumps(payload, ensure_ascii=False, indent=2)}\n\n"
+        "字段说明：'POC'为成交最密集价位(最强支撑/阻力/磁吸)；'VAH/VAL'为价值区上/下沿；"
+        "'距POC%'正=现价在 POC 上方；'价值区宽度'越小筹码越集中(突破更有意义)；"
+        "'量能分'越高趋势越强(🟢≥70/🟡40-69/🔴<40)；"
+        "上破VAH+量能强=偏多共振，跌破VAL+量能弱=偏淡共振，回踩POC=多空决战需观察。\n\n"
+        "请严格输出如下 JSON：\n"
+        "{\n"
+        '  "overview": "3~5 句总览：组合当前筹码结构、有哪些突破/破位/变盘信号（结合占比）",\n'
+        '  "breakout": [{"ticker": "XX", "note": "为何放量站上价值区、量能是否共振、关注点"}],\n'
+        '  "breakdown": [{"ticker": "XX", "note": "为何跌出价值区转弱、量能是否同步走弱"}],\n'
+        '  "at_poc": [{"ticker": "XX", "note": "回踩 POC 面临变盘、上下沿在哪、如何观察"}],\n'
+        '  "actions": ["可考虑关注的方向或动作（中性表述，非指令）…"],\n'
+        '  "risks": ["需警惕的风险点（如高仓位却跌出价值区、假突破）…"]\n'
+        "}\n"
+        "breakout/breakdown/at_poc 从数据中选取代表性标的即可，不必穷举；"
         "优先点名仓位占比大的持仓。数据不足时相应字段给空数组。"
     )
     return llm.chat_json(system, user, model=model, max_tokens=1600)
