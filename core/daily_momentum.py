@@ -194,6 +194,124 @@ def score_holdings_ema(portfolio: dict,
     return pd.DataFrame(rows).sort_values("ema_score", ascending=False).reset_index(drop=True)
 
 
+# ─── Fibonacci 回撤持仓预警 ───────────────────────────────────────────────────
+FIB_RATIOS   = (0.236, 0.382, 0.5, 0.618, 0.786)   # 标准回撤比例
+FIB_KEY      = (0.382, 0.5, 0.618, 0.786)           # 关键支撑/阻力位
+FIB_NEAR     = 0.02                                 # 贴近关键位阈值（2%）
+FIB_LOOKBACK = 120                                  # 波段高低点回看（交易日，约半年）
+
+
+def fib_signal(close: pd.Series, lookback: int = FIB_LOOKBACK) -> dict | None:
+    """
+    基于近期波段高低点计算 Fibonacci 回撤位，判断现价所处位置并给出预警。
+
+    逻辑：
+      · 取 lookback 窗口内的波段高 / 低点，按先后顺序判断趋势方向；
+      · 先低后高 = 上升趋势 → 从高点向下画回撤（fib 位为支撑）；
+      · 先高后低 = 下降趋势 → 从低点向上画反弹（fib 位为阻力）；
+      · retr = 回撤/反弹进度（0=贴波段极值，1=回到起点，>1=突破起点）；
+      · 触发预警：破位(retr>0.786) / 贴近关键 fib 位(±2%) / 强势贴高(retr≤0.15)。
+
+    数据不足返回 None。
+    """
+    c = close.dropna().sort_index()
+    if len(c) < 40:
+        return None
+    win = c.tail(lookback)
+    hi = float(win.max())
+    lo = float(win.min())
+    hi_idx = win.idxmax()
+    lo_idx = win.idxmin()
+    if hi <= lo:
+        return None
+
+    rng   = hi - lo
+    price = float(c.iloc[-1])
+    uptrend = lo_idx < hi_idx          # 先低后高 → 上升趋势后的回调
+
+    if uptrend:
+        retr   = (hi - price) / rng
+        levels = [(r, hi - rng * r) for r in FIB_RATIOS]
+        kind, trend_txt = "支撑", "回调"
+    else:
+        retr   = (price - lo) / rng
+        levels = [(r, lo + rng * r) for r in FIB_RATIOS]
+        kind, trend_txt = "阻力", "反弹"
+    retr = _clip(retr, 0.0, 2.0)
+
+    nearest_r, nearest_p = min(levels, key=lambda x: abs(price - x[1]))
+    dist = (price - nearest_p) / price if price > 0 else 0.0   # 现价距最近 fib 位（正=在其上方）
+    near_key = abs(dist) <= FIB_NEAR and nearest_r in FIB_KEY
+
+    # 分档信号灯
+    if retr <= 0.236:
+        light, zone = "🟢", "浅回撤·强势"
+    elif retr <= 0.5:
+        light, zone = "🟡", "健康回撤区"
+    elif retr <= 0.786:
+        light, zone = "🟡", "深回撤·临界"
+    else:
+        light, zone = "🔴", "破位·弱势"
+
+    # 触发判定 + 类别（供预警清单筛选）
+    trigger, category = False, ""
+    if retr > 0.786:
+        trigger, category, light = True, "破位预警", "🔴"
+    elif near_key:
+        trigger, category = True, f"贴近{nearest_r:.1%}{kind}"
+    elif retr <= 0.15 and uptrend:
+        trigger, category = True, "强势贴高"
+
+    near_txt = f"·贴近{nearest_r:.1%}{kind}" if near_key else ""
+    signal = f"{trend_txt}·{zone}{near_txt}"
+
+    return {
+        "fib_light":     light,
+        "fib_signal":    signal,
+        "category":      category,
+        "trigger":       trigger,
+        "retr":          round(retr, 3),          # 回撤/反弹比例
+        "price":         round(price, 2),
+        "swing_high":    round(hi, 2),
+        "swing_low":     round(lo, 2),
+        "nearest_fib":   f"{nearest_r:.1%}",
+        "nearest_price": round(nearest_p, 2),
+        "dist":          round(dist, 4),           # 距最近 fib 位（小数）
+        "uptrend":       uptrend,
+    }
+
+
+def fib_alerts(portfolio: dict, lookback: int = FIB_LOOKBACK) -> pd.DataFrame:
+    """对持仓计算 Fib 回撤信号，返回 DataFrame（触发预警的排在最前）。"""
+    import config
+
+    ticker_map: dict[str, str] = {}
+    for acc in portfolio.get("accounts", []):
+        for pos in acc.get("positions", []):
+            yf_t = pos["yf_ticker"]
+            if yf_t.upper() != config.CASH_TICKER:
+                ticker_map[yf_t] = pos["display"]
+
+    histories = fetch_histories(list(ticker_map.keys()))
+
+    rows = []
+    for yf_t, display in ticker_map.items():
+        close = histories.get(yf_t)
+        if close is None:
+            continue
+        r = fib_signal(close, lookback)
+        if r is None:
+            continue
+        rows.append({"ticker": yf_t, "display": display, **r})
+
+    if not rows:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(rows)
+    # 触发的优先，再按回撤深度降序（破位/深回撤在前）
+    return df.sort_values(["trigger", "retr"], ascending=[False, False]).reset_index(drop=True)
+
+
 # ─── 价格下载 ─────────────────────────────────────────────────────────────────
 
 def fetch_histories(tickers: list[str], period: str = FETCH_PERIOD) -> dict[str, pd.Series]:

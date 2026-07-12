@@ -278,3 +278,37 @@ def momentum_review(
         "优先点名仓位占比大的持仓。数据不足时相应字段给空数组。"
     )
     return llm.chat_json(system, user, model=model, max_tokens=1800)
+
+
+def fib_review(
+    payload: dict,
+    *,
+    model: str = llm.DEFAULT_MODEL,
+) -> dict:
+    """对持仓的 Fibonacci 回撤预警做一次自然语言解读（结合 EMA 量能）。"""
+    system = _GUARDRAIL + (
+        " 你精通 Fibonacci 回撤与支撑/阻力分析，能结合 EMA 量能趋势，"
+        "判断哪些持仓回踩到关键支撑（潜在关注/持有区）、哪些已破位转弱（需警惕），"
+        "并说明 Fib 信号与量能是否共振。"
+    )
+    user = (
+        "下面是一支半导体组合中**触发 Fib 回撤预警**的持仓（我们已用近半年波段"
+        "高低点自算好回撤位与信号，并附上 EMA 量能分做共振参考）。\n"
+        "请做一次中文预警解读，帮基金经理回答：**哪些回踩到关键支撑值得关注、"
+        "哪些已破位需警惕、Fib 与量能是否共振**，并结合仓位占比点出轻重。\n\n"
+        f"数据：\n{json.dumps(payload, ensure_ascii=False, indent=2)}\n\n"
+        "字段说明：'回撤%'越大代表从波段极值回吐越多；'最近Fib位'如 61.8% 为黄金支撑；"
+        "'距最近位%'接近 0 表示正贴该 fib 位；'量能分'越高趋势越强(🟢≥70/🟡40-69/🔴<40)；"
+        "Fib 破位 + 量能弱 = 共振看淡，Fib 回踩关键支撑 + 量能仍强 = 共振偏多。\n\n"
+        "请严格输出如下 JSON：\n"
+        "{\n"
+        '  "overview": "3~5 句总览：组合当前有哪些 Fib 预警、整体偏强还是偏弱（结合占比）",\n'
+        '  "support_watch": [{"ticker": "XX", "note": "回踩到哪个 fib 支撑、量能是否共振、为何值得关注"}],\n'
+        '  "breakdown": [{"ticker": "XX", "note": "为何破位转弱（跌破 78.6%/量能同步走弱）"}],\n'
+        '  "actions": ["可考虑关注的方向或动作（中性表述，非指令）…"],\n'
+        '  "risks": ["需警惕的风险点（如高仓位却破位、假支撑）…"]\n'
+        "}\n"
+        "support_watch/breakdown 从数据中选取代表性标的即可，不必穷举；"
+        "优先点名仓位占比大的持仓。数据不足时相应字段给空数组。"
+    )
+    return llm.chat_json(system, user, model=model, max_tokens=1600)

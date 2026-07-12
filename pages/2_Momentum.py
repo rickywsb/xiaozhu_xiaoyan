@@ -15,11 +15,14 @@ import config
 from core.daily_momentum import PERIODS, score_holdings, fetch_histories, calc_metrics, DEFAULT_DECAY, DEFAULT_WINDOW
 try:
     from core.daily_momentum import score_holdings_ema, EMA_SPANS
+    from core.daily_momentum import fib_alerts, FIB_RATIOS, FIB_LOOKBACK
     _EMA_AVAILABLE = True
 except ImportError:
     # 云端刚更新代码但进程未完全重启时，旧模块可能缺少新函数——优雅降级而非崩溃
     _EMA_AVAILABLE = False
     EMA_SPANS = (10, 20, 60)
+    FIB_RATIOS = (0.236, 0.382, 0.5, 0.618, 0.786)
+    FIB_LOOKBACK = 120
 from core.technical_analysis import get_ohlcv, build_candlestick_chart
 from core import accumulation as accum
 from core import llm, ai_review
@@ -62,6 +65,12 @@ def _cached_accum(portfolio_hash: str) -> pd.DataFrame:
 def _cached_ema(portfolio_hash: str) -> pd.DataFrame:
     portfolio = json.loads(config.PORTFOLIO_PATH.read_text(encoding="utf-8"))
     return score_holdings_ema(portfolio)
+
+
+@st.cache_data(show_spinner="🎯 正在计算 Fib 回撤预警…", ttl=1800)
+def _cached_fib(portfolio_hash: str, lookback: int) -> pd.DataFrame:
+    portfolio = json.loads(config.PORTFOLIO_PATH.read_text(encoding="utf-8"))
+    return fib_alerts(portfolio, lookback)
 
 
 @st.cache_data(show_spinner=False, ttl=21600)
@@ -127,8 +136,8 @@ ph = _portfolio_hash(portfolio)
 with st.spinner("正在加载量能数据…"):
     df = _cached_score(ph, window, decay)
 
-tab_ema, tab_momentum, tab_accum, tab_chart = st.tabs(
-    ["🚦 EMA量能", "📈 量能报告", "🏦 主力吸筹", "🕯 技术图表"])
+tab_ema, tab_fib, tab_momentum, tab_accum, tab_chart = st.tabs(
+    ["🚦 EMA量能", "🎯 Fib预警", "📈 量能报告", "🏦 主力吸筹", "🕯 技术图表"])
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # EMA 量能评分 TAB （红绿灯 · 0-100 分 · AI 解读）
@@ -293,6 +302,202 @@ with tab_ema:
                     )
                     with st.expander("🔎 查看喂给 AI 的原始数据"):
                         st.json(_build_ema_payload())
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Fib 回撤预警 TAB （波段高低点 · 关键支撑/阻力 · 只列触发预警 · AI 解读）
+# ═══════════════════════════════════════════════════════════════════════════════
+with tab_fib:
+    st.subheader("🎯 Fibonacci 回撤预警")
+    st.caption(
+        f"从近 **{FIB_LOOKBACK} 交易日（约半年）** 的波段高/低点画 Fib 回撤线"
+        f"（{' / '.join(f'{r:.1%}' for r in FIB_RATIOS)}），判断现价所处支撑/阻力带。"
+        "**只列出触发预警的持仓**：🔴破位(跌破78.6%) · 🎯贴近关键位(±2%) · 🟢强势贴高。"
+        "并附 EMA 量能分做**共振**参考。仅供辅助研究，非投资建议。"
+    )
+
+    fib_df = _cached_fib(ph, FIB_LOOKBACK) if _EMA_AVAILABLE else pd.DataFrame()
+    if not _EMA_AVAILABLE:
+        st.info("🔄 Fib 预警模块刚更新，云端进程需重启后生效："
+                "右下角 **Manage app → ⋮ → Reboot app**（重启后本页即恢复）。")
+    elif fib_df.empty:
+        st.warning("暂无有效数据，请检查持仓 ticker 或点击「⚡ 刷新量能」重试。")
+    else:
+        # EMA 量能分映射（共振参考）
+        ema_map: dict[str, int] = {}
+        if _EMA_AVAILABLE:
+            try:
+                _ema_for_fib = _cached_ema(ph)
+                if not _ema_for_fib.empty:
+                    ema_map = {r["ticker"]: int(r["ema_score"])
+                               for _, r in _ema_for_fib.iterrows()}
+            except Exception:
+                ema_map = {}
+
+        triggered = fib_df[fib_df["trigger"]].copy()
+        n_break = int((triggered["category"] == "破位预警").sum())
+        n_near  = int(triggered["category"].str.startswith("贴近").sum()) if not triggered.empty else 0
+        n_strong = int((triggered["category"] == "强势贴高").sum())
+
+        f1, f2, f3, f4 = st.columns(4)
+        f1.metric("🚨 触发预警", len(triggered))
+        f2.metric("🔴 破位 (>78.6%)", n_break)
+        f3.metric("🎯 贴近关键位", n_near)
+        f4.metric("🟢 强势贴高", n_strong)
+
+        if triggered.empty:
+            st.success("✅ 当前无持仓触发 Fib 回撤预警——多数标的处于健康回撤区/趋势中段。")
+        else:
+            show_fib = triggered.copy()
+            show_fib["灯"] = show_fib["fib_light"]
+            show_fib["回撤%"] = show_fib["retr"] * 100
+            show_fib["距最近位%"] = show_fib["dist"] * 100
+            show_fib["量能分"] = show_fib["ticker"].map(ema_map)
+            show_fib = show_fib.rename(columns={
+                "display": "股票", "category": "预警", "fib_signal": "信号",
+                "price": "现价", "nearest_fib": "最近Fib位", "nearest_price": "该位价",
+                "swing_high": "波段高", "swing_low": "波段低",
+            })
+            cols = ["灯", "股票", "预警", "信号", "现价", "最近Fib位", "该位价",
+                    "回撤%", "距最近位%", "量能分", "波段高", "波段低"]
+            st.dataframe(
+                show_fib[cols],
+                column_config={
+                    "现价": st.column_config.NumberColumn("现价", format="$%.2f"),
+                    "该位价": st.column_config.NumberColumn("该位价", format="$%.2f"),
+                    "波段高": st.column_config.NumberColumn("波段高", format="$%.2f"),
+                    "波段低": st.column_config.NumberColumn("波段低", format="$%.2f"),
+                    "回撤%": st.column_config.NumberColumn("回撤%", format="%.1f%%",
+                        help="从波段极值回吐的比例，越大回撤越深"),
+                    "距最近位%": st.column_config.NumberColumn("距最近位%", format="%+.1f%%",
+                        help="现价距最近 Fib 位；接近 0=正贴该位"),
+                    "量能分": st.column_config.ProgressColumn("量能分", format="%d",
+                        min_value=0, max_value=100, help="EMA 量能分，共振参考"),
+                },
+                width="stretch", hide_index=True,
+                height=min(500, 80 + len(show_fib) * 35),
+            )
+
+            break_rows = triggered[triggered["category"] == "破位预警"]
+            if not break_rows.empty:
+                st.warning(
+                    "🔴 **破位预警**（跌破 78.6% 回撤，趋势转弱风险）：  \n"
+                    + "  ".join(f"`{r['display']} 回撤{r['retr']*100:.0f}%`"
+                               for _, r in break_rows.iterrows())
+                )
+
+        with st.expander("📖 怎么读这张预警表"):
+            st.markdown(
+                "- **波段高/低**：近半年内的最高/最低收盘价，Fib 线以此为锚。\n"
+                "- **回撤%**：从波段极值回吐了多少。<23.6% 强势；38.2–61.8% 健康回撤区；"
+                ">78.6% 视为破位。\n"
+                "- **贴近关键位**：现价落在 38.2/50/61.8/78.6% 附近（±2%），这些是常见"
+                "支撑/阻力带，容易出现反应。**61.8%（黄金分割）**最受关注。\n"
+                "- **量能分共振**：Fib 回踩关键支撑 + 量能分仍高(🟢) = 偏多共振；"
+                "Fib 破位 + 量能分低(🔴) = 偏淡共振。\n"
+                "- Fib 高低点选择较主观，请与 EMA 量能、基本面一起看，切勿单独据此操作。"
+            )
+
+        # ── 🤖 AI Fib 预警解读 ────────────────────────────────────────────
+        st.divider()
+        st.markdown("#### 🤖 AI Fib 预警解读")
+        if triggered.empty:
+            st.caption("当前无触发项，无需 AI 解读。")
+        elif not llm.available():
+            st.info("未检测到 OpenAI Key。在 Streamlit Secrets 配置 `OPENAI_API_KEY` 后即可生成 AI 解读。")
+        else:
+            fib_ai_model = st.radio(
+                "模型档位",
+                options=[llm.DEFAULT_MODEL, llm.DEEP_MODEL],
+                format_func=lambda m: "gpt-4o-mini（便宜·日常）" if m == llm.DEFAULT_MODEL
+                else "gpt-4.1（更强·深度）",
+                horizontal=True, key="fib_ai_model",
+            )
+
+            def _build_fib_payload() -> dict:
+                # 仓位占比：从价格缓存估算股票市值权重
+                try:
+                    from core.price_updater import load_cache
+                    _cache = load_cache()
+                    _prices = _cache.get("prices", {}) if _cache else {}
+                except Exception:
+                    _prices = {}
+                weights: dict[str, float] = {}
+                for acc in portfolio.get("accounts", []):
+                    for pos in acc.get("positions", []):
+                        t = pos["yf_ticker"]
+                        px_ = _prices.get(t)
+                        sh = pos.get("shares")
+                        if px_ and sh:
+                            weights[t] = weights.get(t, 0.0) + px_ * sh
+                tot = sum(weights.values()) or 1.0
+
+                per = []
+                for _, r in triggered.iterrows():
+                    per.append({
+                        "股票": r["display"],
+                        "灯": r["fib_light"],
+                        "信号": r["fib_signal"],
+                        "类别": r["category"],
+                        "回撤%": round(r["retr"] * 100, 1),
+                        "最近Fib位": r["nearest_fib"],
+                        "距最近位%": round(r["dist"] * 100, 1),
+                        "量能分": ema_map.get(r["ticker"]),
+                        "占比%": round(weights.get(r["ticker"], 0.0) / tot * 100, 1),
+                    })
+                return {
+                    "波段窗口": f"{FIB_LOOKBACK} 交易日",
+                    "口径": "从近半年波段高/低点画 Fib 回撤；retr=回撤进度；"
+                            "🔴破位>78.6% / 贴近关键位(±2%) / 🟢强势贴高",
+                    "组合概览": {"触发数": len(triggered), "破位数": n_break,
+                                "贴近关键位数": n_near, "强势数": n_strong},
+                    "触发预警": per,
+                }
+
+            @st.cache_data(show_spinner="🤖 AI 正在解读 Fib 预警…", ttl=1800)
+            def _cached_fib_review(cache_key: str, payload: dict, model: str) -> dict:
+                return ai_review.fib_review(payload, model=model)
+
+            if st.button("🩺 生成 AI Fib 解读", type="primary", key="gen_fib_review"):
+                payload = _build_fib_payload()
+                ck = f"{ph}|{fib_ai_model}|{len(triggered)}|{n_break}"
+                try:
+                    res = _cached_fib_review(ck, payload, fib_ai_model)
+                except llm.LLMError as e:
+                    st.error(f"AI 解读失败：{e}")
+                    res = None
+
+                if res:
+                    if res.get("overview"):
+                        st.markdown(f"### {res['overview']}")
+                    cs, cb = st.columns(2)
+                    with cs:
+                        if res.get("support_watch"):
+                            st.markdown("#### 🎯 回踩支撑·关注")
+                            for o in res["support_watch"]:
+                                st.markdown(f"- **{o.get('ticker','')}**：{o.get('note','')}")
+                    with cb:
+                        if res.get("breakdown"):
+                            st.markdown("#### 🔴 破位·警惕")
+                            for o in res["breakdown"]:
+                                st.markdown(f"- **{o.get('ticker','')}**：{o.get('note','')}")
+                    ca, cr = st.columns(2)
+                    with ca:
+                        if res.get("actions"):
+                            st.markdown("#### 🧭 可关注方向")
+                            for a in res["actions"]:
+                                st.markdown(f"- {a}")
+                    with cr:
+                        if res.get("risks"):
+                            st.markdown("#### ⚠️ 风险")
+                            for rk in res["risks"]:
+                                st.markdown(f"- {rk}")
+                    u = res.get("_usage", {})
+                    st.caption(
+                        f"🤖 {res.get('_model','')} · {u.get('total_tokens','?')} tokens · "
+                        f"~${res.get('_cost_usd',0):.4f} | AI 生成，非投资建议。"
+                    )
+                    with st.expander("🔎 查看喂给 AI 的原始数据"):
+                        st.json(_build_fib_payload())
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 技术图表 TAB （独立于量能数据，先渲染以避免量能 st.stop 影响）
