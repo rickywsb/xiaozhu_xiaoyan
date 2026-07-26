@@ -480,6 +480,198 @@ def vp_alerts(portfolio: dict, lookback: int = VP_LOOKBACK) -> pd.DataFrame:
     return df.reset_index(drop=True)
 
 
+# ─── 相对强度 RS（vs 板块基准 SOXX）───────────────────────────────────────────
+RS_BENCHMARK = "SOXX"        # 费城半导体 ETF，作为板块基准
+RS_WINDOWS   = (21, 63)      # 相对收益回看：1 月 / 3 月（交易日）
+
+
+def relative_strength(portfolio: dict,
+                      benchmark: str = RS_BENCHMARK,
+                      windows: tuple[int, int] = RS_WINDOWS) -> pd.DataFrame:
+    """
+    计算各持仓相对板块基准（默认 SOXX）的相对强度。
+      · rs_1m / rs_3m  个股区间收益 − 基准区间收益（正=跑赢）
+      · rs_score       综合相对收益（1 月 0.4 + 3 月 0.6）
+      · rs_rank        组合内百分位排名（0-100，越高越领涨）
+      · rs_tag         领涨(≥+10%) / 同步 / 落后(≤-10%)（按 3 月相对收益）
+    基准数据缺失时返回空 DataFrame（调用方优雅降级）。
+    """
+    import config
+
+    ticker_map: dict[str, str] = {}
+    for acc in portfolio.get("accounts", []):
+        for pos in acc.get("positions", []):
+            yf_t = pos["yf_ticker"]
+            if yf_t.upper() != config.CASH_TICKER:
+                ticker_map[yf_t] = pos["display"]
+
+    fetch_list = list(dict.fromkeys(list(ticker_map.keys()) + [benchmark]))
+    hist = fetch_histories(fetch_list)
+    bench = hist.get(benchmark)
+    w_short, w_long = windows[0], windows[-1]
+    if bench is None or len(bench.dropna()) < w_long + 1:
+        return pd.DataFrame()
+
+    b_short = _total_return(bench, w_short)
+    b_long  = _total_return(bench, w_long)
+    if b_long is None:
+        return pd.DataFrame()
+
+    rows = []
+    for t, disp in ticker_map.items():
+        c = hist.get(t)
+        if c is None:
+            continue
+        s_short = _total_return(c, w_short)
+        s_long  = _total_return(c, w_long)
+        if s_long is None:
+            continue
+        rs_1m = (s_short - b_short) if (s_short is not None and b_short is not None) else None
+        rs_3m = s_long - b_long
+        rs_score = (0.4 * rs_1m + 0.6 * rs_3m) if rs_1m is not None else rs_3m
+        rows.append({"ticker": t, "display": disp,
+                     "rs_1m": rs_1m, "rs_3m": rs_3m, "rs_score": rs_score})
+
+    if not rows:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(rows)
+    df["rs_rank"] = (df["rs_score"].rank(pct=True) * 100).round().astype(int)
+
+    def _tag(x: float) -> str:
+        if x >= 0.10:
+            return "领涨"
+        if x <= -0.10:
+            return "落后"
+        return "同步"
+
+    df["rs_tag"] = df["rs_3m"].apply(_tag)
+    return df.sort_values("rs_score", ascending=False).reset_index(drop=True)
+
+
+# ─── MACD 背驰预警（缠论精髓·反转早期预警）─────────────────────────────────────
+MACD_FAST, MACD_SLOW, MACD_SIGNAL = 12, 26, 9
+MACD_LOOKBACK = 120        # 回看交易日（约半年）
+MACD_PIVOT_K  = 5          # 局部极值窗口半径（±k 根内最高/最低才算枢轴）
+MACD_RECENT   = 30         # 最新枢轴须落在最近 N 根内才视为有效预警
+
+
+def _macd(close: pd.Series,
+          fast: int = MACD_FAST, slow: int = MACD_SLOW, signal: int = MACD_SIGNAL):
+    ef = close.ewm(span=fast, adjust=False).mean()
+    es = close.ewm(span=slow, adjust=False).mean()
+    dif  = ef - es                                   # DIF（快线）
+    dea  = dif.ewm(span=signal, adjust=False).mean() # DEA（慢线/信号）
+    hist = (dif - dea) * 2                            # 柱（国内惯例 ×2）
+    return dif, dea, hist
+
+
+def _find_pivots(values: np.ndarray, k: int, kind: str) -> list[int]:
+    """返回局部极值下标：kind='high' 为局部高点，'low' 为局部低点。"""
+    n = len(values)
+    piv = []
+    for i in range(k, n - k):
+        seg = values[i - k:i + k + 1]
+        v = values[i]
+        if kind == "high" and v == seg.max() and v > values[i - 1] and v >= values[i + 1]:
+            piv.append(i)
+        elif kind == "low" and v == seg.min() and v < values[i - 1] and v <= values[i + 1]:
+            piv.append(i)
+    return piv
+
+
+def macd_divergence(close: pd.Series,
+                    lookback: int = MACD_LOOKBACK,
+                    k: int = MACD_PIVOT_K) -> dict | None:
+    """
+    MACD 背驰检测（缠论"背驰"可计算部分）：
+      · 顶背驰🔴  价格创新高但 DIF 不创新高（且 DIF>0）→ 涨势衰竭，警惕
+      · 底背驰🟢  价格创新低但 DIF 不创新低（且 DIF<0）→ 跌势衰竭，关注
+    仅当最新枢轴落在最近 MACD_RECENT 根内才触发（保证时效）。数据不足返回 None。
+    """
+    c = close.dropna().sort_index()
+    if len(c) < MACD_SLOW + MACD_SIGNAL + 2 * k + 5:
+        return None
+
+    win  = c.tail(lookback)
+    dif, dea, hist = _macd(win)
+    price = win.to_numpy()
+    difv  = dif.to_numpy()
+    n = len(price)
+
+    cur_price = float(price[-1])
+    cur_dif   = float(difv[-1])
+    cur_dea   = float(dea.iloc[-1])
+    cur_hist  = float(hist.iloc[-1])
+
+    signal_type, light, trigger, note = "无背驰", "⚪", False, "近期无明显背驰"
+
+    highs = _find_pivots(price, k, "high")
+    if len(highs) >= 2:
+        i1, i2 = highs[-2], highs[-1]
+        if (n - 1 - i2) <= MACD_RECENT and price[i2] > price[i1] \
+                and difv[i2] < difv[i1] and difv[i2] > 0:
+            signal_type, light, trigger = "顶背驰", "🔴", True
+            note = "价格创新高但 MACD 动能走弱，涨势或衰竭"
+
+    if not trigger:
+        lows = _find_pivots(price, k, "low")
+        if len(lows) >= 2:
+            j1, j2 = lows[-2], lows[-1]
+            if (n - 1 - j2) <= MACD_RECENT and price[j2] < price[j1] \
+                    and difv[j2] > difv[j1] and difv[j2] < 0:
+                signal_type, light, trigger = "底背驰", "🟢", True
+                note = "价格创新低但 MACD 动能转强，跌势或衰竭"
+
+    macd_cross = "金叉" if cur_dif > cur_dea else "死叉"
+    zero_state = "零轴上方" if cur_dif > 0 else "零轴下方"
+
+    return {
+        "div_light":  light,
+        "signal":     signal_type,
+        "trigger":    trigger,
+        "note":       note,
+        "price":      round(cur_price, 2),
+        "dif":        round(cur_dif, 3),
+        "dea":        round(cur_dea, 3),
+        "macd_hist":  round(cur_hist, 3),
+        "macd_state": f"{macd_cross}·{zero_state}",
+    }
+
+
+def divergence_alerts(portfolio: dict, lookback: int = MACD_LOOKBACK) -> pd.DataFrame:
+    """对持仓做 MACD 背驰检测，返回 DataFrame（触发预警的排在最前，顶背驰在最前）。"""
+    import config
+
+    ticker_map: dict[str, str] = {}
+    for acc in portfolio.get("accounts", []):
+        for pos in acc.get("positions", []):
+            yf_t = pos["yf_ticker"]
+            if yf_t.upper() != config.CASH_TICKER:
+                ticker_map[yf_t] = pos["display"]
+
+    histories = fetch_histories(list(ticker_map.keys()))
+
+    rows = []
+    for t, disp in ticker_map.items():
+        c = histories.get(t)
+        if c is None:
+            continue
+        r = macd_divergence(c, lookback)
+        if r is None:
+            continue
+        rows.append({"ticker": t, "display": disp, **r})
+
+    if not rows:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(rows)
+    order = {"顶背驰": 0, "底背驰": 1, "无背驰": 2}
+    df["_o"] = df["signal"].map(order).fillna(3)
+    df = df.sort_values(["trigger", "_o"], ascending=[False, True]).drop(columns="_o")
+    return df.reset_index(drop=True)
+
+
 # ─── 价格下载 ─────────────────────────────────────────────────────────────────
 
 def fetch_histories(tickers: list[str], period: str = FETCH_PERIOD) -> dict[str, pd.Series]:

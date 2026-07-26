@@ -17,6 +17,8 @@ try:
     from core.daily_momentum import score_holdings_ema, EMA_SPANS
     from core.daily_momentum import fib_alerts, FIB_RATIOS, FIB_LOOKBACK
     from core.daily_momentum import vp_alerts, VP_LOOKBACK, VP_VALUE_AREA
+    from core.daily_momentum import relative_strength, RS_BENCHMARK
+    from core.daily_momentum import divergence_alerts, MACD_LOOKBACK
     _EMA_AVAILABLE = True
 except ImportError:
     # 云端刚更新代码但进程未完全重启时，旧模块可能缺少新函数——优雅降级而非崩溃
@@ -26,6 +28,8 @@ except ImportError:
     FIB_LOOKBACK = 120
     VP_LOOKBACK = 120
     VP_VALUE_AREA = 0.70
+    RS_BENCHMARK = "SOXX"
+    MACD_LOOKBACK = 120
 from core.technical_analysis import get_ohlcv, build_candlestick_chart
 from core import accumulation as accum
 from core import llm, ai_review
@@ -80,6 +84,18 @@ def _cached_fib(portfolio_hash: str, lookback: int) -> pd.DataFrame:
 def _cached_vp(portfolio_hash: str, lookback: int) -> pd.DataFrame:
     portfolio = json.loads(config.PORTFOLIO_PATH.read_text(encoding="utf-8"))
     return vp_alerts(portfolio, lookback)
+
+
+@st.cache_data(show_spinner="🏅 正在计算相对强度 RS…", ttl=1800)
+def _cached_rs(portfolio_hash: str) -> pd.DataFrame:
+    portfolio = json.loads(config.PORTFOLIO_PATH.read_text(encoding="utf-8"))
+    return relative_strength(portfolio)
+
+
+@st.cache_data(show_spinner="⚡ 正在检测 MACD 背驰…", ttl=1800)
+def _cached_div(portfolio_hash: str, lookback: int) -> pd.DataFrame:
+    portfolio = json.loads(config.PORTFOLIO_PATH.read_text(encoding="utf-8"))
+    return divergence_alerts(portfolio, lookback)
 
 
 @st.cache_data(show_spinner=False, ttl=21600)
@@ -145,8 +161,8 @@ ph = _portfolio_hash(portfolio)
 with st.spinner("正在加载量能数据…"):
     df = _cached_score(ph, window, decay)
 
-tab_ema, tab_fib, tab_vp, tab_momentum, tab_accum, tab_chart = st.tabs(
-    ["🚦 EMA量能", "🎯 Fib预警", "📊 筹码分布", "📈 量能报告", "🏦 主力吸筹", "🕯 技术图表"])
+tab_ema, tab_fib, tab_vp, tab_div, tab_momentum, tab_accum, tab_chart = st.tabs(
+    ["🚦 EMA量能", "🎯 Fib预警", "📊 筹码分布", "⚡ 背驰", "📈 量能报告", "🏦 主力吸筹", "🕯 技术图表"])
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # EMA 量能评分 TAB （红绿灯 · 0-100 分 · AI 解读）
@@ -182,26 +198,52 @@ with tab_ema:
         show_ema["灯"] = show_ema["light"]
         show_ema["乖离%"] = show_ema["dev"] * 100
         show_ema["斜率%(5日)"] = show_ema["slope"] * 100
+
+        # 相对强度 RS（vs SOXX）并入表格
+        rs_df = _cached_rs(ph) if _EMA_AVAILABLE else pd.DataFrame()
+        has_rs = not rs_df.empty
+        if has_rs:
+            rs_map = {r["ticker"]: r for _, r in rs_df.iterrows()}
+            show_ema["相对强度"] = show_ema["ticker"].map(
+                lambda t: rs_map[t]["rs_tag"] if t in rs_map else None)
+            show_ema[f"vs{RS_BENCHMARK}%(3月)"] = show_ema["ticker"].map(
+                lambda t: rs_map[t]["rs_3m"] * 100 if t in rs_map else None)
+            show_ema["RS排名"] = show_ema["ticker"].map(
+                lambda t: rs_map[t]["rs_rank"] if t in rs_map else None)
+
         show_ema = show_ema.rename(columns={
             "display": "股票", "ema_score": "量能分",
             "state": "状态", "price": "现价", "ema_mid": f"EMA{m_span}",
         })
         cols = ["灯", "股票", "量能分", "状态", "现价", f"EMA{m_span}", "乖离%", "斜率%(5日)"]
+        if has_rs:
+            cols += ["相对强度", f"vs{RS_BENCHMARK}%(3月)", "RS排名"]
+        col_cfg = {
+            "量能分": st.column_config.ProgressColumn(
+                "量能分", format="%d", min_value=0, max_value=100,
+                help="0-100，越高趋势越强",
+            ),
+            "现价": st.column_config.NumberColumn("现价", format="$%.2f"),
+            f"EMA{m_span}": st.column_config.NumberColumn(f"EMA{m_span}", format="$%.2f"),
+            "乖离%": st.column_config.NumberColumn("乖离%", format="%+.1f%%"),
+            "斜率%(5日)": st.column_config.NumberColumn("斜率%(5日)", format="%+.2f%%"),
+        }
+        if has_rs:
+            col_cfg[f"vs{RS_BENCHMARK}%(3月)"] = st.column_config.NumberColumn(
+                f"vs{RS_BENCHMARK}%(3月)", format="%+.1f%%",
+                help=f"近3月个股收益 − {RS_BENCHMARK} 收益，正=跑赢板块")
+            col_cfg["RS排名"] = st.column_config.ProgressColumn(
+                "RS排名", format="%d", min_value=0, max_value=100,
+                help="组合内相对强度百分位，越高越领涨")
         st.dataframe(
             show_ema[cols],
-            column_config={
-                "量能分": st.column_config.ProgressColumn(
-                    "量能分", format="%d", min_value=0, max_value=100,
-                    help="0-100，越高趋势越强",
-                ),
-                "现价": st.column_config.NumberColumn("现价", format="$%.2f"),
-                f"EMA{m_span}": st.column_config.NumberColumn(f"EMA{m_span}", format="$%.2f"),
-                "乖离%": st.column_config.NumberColumn("乖离%", format="%+.1f%%"),
-                "斜率%(5日)": st.column_config.NumberColumn("斜率%(5日)", format="%+.2f%%"),
-            },
+            column_config=col_cfg,
             width="stretch", hide_index=True,
             height=min(560, 80 + len(show_ema) * 35),
         )
+        if has_rs:
+            st.caption(f"🏅 **相对强度 RS** = 个股相对 **{RS_BENCHMARK}**(费城半导体) 的强弱："
+                       "领涨=跑赢板块 ≥10% / 落后=跑输 ≥10%；RS排名为组合内百分位。")
 
         warn_ema = ema_df[ema_df["ema_score"] < 40]
         if not warn_ema.empty:
@@ -245,7 +287,7 @@ with tab_ema:
 
                 per = []
                 for _, r in ema_df.iterrows():
-                    per.append({
+                    row = {
                         "股票": r["display"],
                         "量能分": int(r["ema_score"]),
                         "灯": r["light"],
@@ -253,10 +295,17 @@ with tab_ema:
                         "乖离%": round(r["dev"] * 100, 1),
                         "斜率%(5日)": round(r["slope"] * 100, 2),
                         "占比%": round(weights.get(r["ticker"], 0.0) / tot * 100, 1),
-                    })
+                    }
+                    if has_rs and r["ticker"] in rs_map:
+                        _rr = rs_map[r["ticker"]]
+                        row["相对强度"] = _rr["rs_tag"]
+                        row[f"vs{RS_BENCHMARK}%(3月)"] = round(_rr["rs_3m"] * 100, 1)
+                        row["RS排名"] = int(_rr["rs_rank"])
+                    per.append(row)
                 return {
                     "EMA参数": f"EMA{s_span}/{m_span}/{l_span}",
                     "评分口径": "0-100；🟢≥70 / 🟡40-69 / 🔴<40；由 位置/排列/斜率/乖离 加权",
+                    "相对强度基准": RS_BENCHMARK if has_rs else None,
                     "分布": {"🟢强": n_strong, "🟡中": n_mid, "🔴弱": n_weak,
                             "平均分": round(avg_score, 1)},
                     "个股": per,
@@ -712,6 +761,207 @@ with tab_vp:
                     )
                     with st.expander("🔎 查看喂给 AI 的原始数据"):
                         st.json(_build_vp_payload())
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MACD 背驰预警 TAB （缠论"背驰"·顶背驰/底背驰·反转早期预警·AI 解读）
+# ═══════════════════════════════════════════════════════════════════════════════
+with tab_div:
+    st.subheader("⚡ MACD 背驰预警")
+    st.caption(
+        f"按近 **{MACD_LOOKBACK} 交易日** 的日线自算 MACD(12/26/9)，检测价格枢轴与 DIF 的**背驰**："
+        "🔴 **顶背驰**=价创新高但 MACD 动能走弱(涨势或衰竭) · "
+        "🟢 **底背驰**=价创新低但 MACD 动能转强(跌势或衰竭)。"
+        "**只列出最新枢轴在近 30 根内的有效背驰**，并附 EMA 量能分 / 相对强度做**共振**参考。"
+        "背驰是概率性早期信号，需价格/量能确认，非投资建议。"
+    )
+
+    div_df = _cached_div(ph, MACD_LOOKBACK) if _EMA_AVAILABLE else pd.DataFrame()
+    if not _EMA_AVAILABLE:
+        st.info("🔄 背驰模块刚更新，云端进程需重启后生效："
+                "右下角 **Manage app → ⋮ → Reboot app**（重启后本页即恢复）。")
+    elif div_df.empty:
+        st.warning("暂无有效数据，请检查持仓 ticker 或点击「⚡ 刷新量能」重试。")
+    else:
+        # EMA 量能分 & 相对强度映射（共振参考）
+        ema_map_div: dict[str, int] = {}
+        rs_map_div: dict[str, str] = {}
+        try:
+            _ema_for_div = _cached_ema(ph)
+            if not _ema_for_div.empty:
+                ema_map_div = {r["ticker"]: int(r["ema_score"])
+                               for _, r in _ema_for_div.iterrows()}
+        except Exception:
+            ema_map_div = {}
+        try:
+            _rs_for_div = _cached_rs(ph)
+            if not _rs_for_div.empty:
+                rs_map_div = {r["ticker"]: r["rs_tag"] for _, r in _rs_for_div.iterrows()}
+        except Exception:
+            rs_map_div = {}
+
+        triggered_div = div_df[div_df["trigger"]].copy()
+        n_top = int((triggered_div["signal"] == "顶背驰").sum()) if not triggered_div.empty else 0
+        n_bot = int((triggered_div["signal"] == "底背驰").sum()) if not triggered_div.empty else 0
+
+        d1, d2, d3 = st.columns(3)
+        d1.metric("🚨 触发背驰", len(triggered_div))
+        d2.metric("🔴 顶背驰", n_top)
+        d3.metric("🟢 底背驰", n_bot)
+
+        if triggered_div.empty:
+            st.success("✅ 当前无持仓触发背驰——多数标的价格与 MACD 动能同步，暂无明显反转预警。")
+        else:
+            show_div = triggered_div.copy()
+            show_div["灯"] = show_div["div_light"]
+            show_div["量能分"] = show_div["ticker"].map(ema_map_div)
+            show_div["相对强度"] = show_div["ticker"].map(rs_map_div)
+            show_div = show_div.rename(columns={
+                "display": "股票", "signal": "背驰", "note": "说明",
+                "price": "现价", "dif": "DIF", "dea": "DEA",
+                "macd_hist": "MACD柱", "macd_state": "MACD状态",
+            })
+            cols = ["灯", "股票", "背驰", "说明", "现价", "DIF", "DEA",
+                    "MACD柱", "MACD状态", "量能分", "相对强度"]
+            st.dataframe(
+                show_div[cols],
+                column_config={
+                    "现价": st.column_config.NumberColumn("现价", format="$%.2f"),
+                    "DIF": st.column_config.NumberColumn("DIF", format="%.3f",
+                        help="MACD 快线（EMA12−EMA26）"),
+                    "DEA": st.column_config.NumberColumn("DEA", format="%.3f",
+                        help="MACD 慢线（DIF 的 EMA9）"),
+                    "MACD柱": st.column_config.NumberColumn("MACD柱", format="%+.3f",
+                        help="(DIF−DEA)×2；柱缩短=动能衰减"),
+                    "量能分": st.column_config.ProgressColumn("量能分", format="%d",
+                        min_value=0, max_value=100, help="EMA 量能分，共振参考"),
+                },
+                width="stretch", hide_index=True,
+                height=min(500, 80 + len(show_div) * 35),
+            )
+
+            top_rows = triggered_div[triggered_div["signal"] == "顶背驰"]
+            if not top_rows.empty:
+                st.warning(
+                    "🔴 **顶背驰**（价创新高但动能走弱，警惕见顶回落）：  \n"
+                    + "  ".join(f"`{r['display']} ${r['price']:.2f}`"
+                               for _, r in top_rows.iterrows())
+                )
+
+        with st.expander("📖 怎么读这张背驰预警表"):
+            st.markdown(
+                "- **背驰（缠论精髓）**：价格与 MACD 动能「走反」，是趋势可能反转的**早期**信号。\n"
+                "- **🔴 顶背驰**：价格创新高，但 DIF 未能同步创新高（且 DIF>0）——上涨「后劲不足」，"
+                "警惕见顶回落，尤其配合量能转弱/相对强度落后。\n"
+                "- **🟢 底背驰**：价格创新低，但 DIF 未能同步创新低（且 DIF<0）——下跌「动能枯竭」，"
+                "关注见底企稳，尤其配合相对强度回升。\n"
+                "- **DIF / DEA / MACD柱**：DIF 是快线、DEA 是慢线，柱=（DIF−DEA)×2；柱由长转短=动能衰减。\n"
+                "- **MACD状态**：金叉/死叉 + 零轴上/下方，判断当前多空强弱位置。\n"
+                "- **共振**：顶背驰 + 量能🔴 + 相对落后 = 偏空共振；底背驰 + 相对领涨 = 偏多共振。\n"
+                "- 背驰是**概率性**信号，可能「钝化」后继续单边，务必等价格/量能确认，切勿单独据此操作。"
+            )
+
+        # ── 🤖 AI 背驰预警解读 ────────────────────────────────────────────
+        st.divider()
+        st.markdown("#### 🤖 AI 背驰预警解读")
+        if triggered_div.empty:
+            st.caption("当前无触发项，无需 AI 解读。")
+        elif not llm.available():
+            st.info("未检测到 OpenAI Key。在 Streamlit Secrets 配置 `OPENAI_API_KEY` 后即可生成 AI 解读。")
+        else:
+            div_ai_model = st.radio(
+                "模型档位",
+                options=[llm.DEFAULT_MODEL, llm.DEEP_MODEL],
+                format_func=lambda m: "gpt-4o-mini（便宜·日常）" if m == llm.DEFAULT_MODEL
+                else "gpt-4.1（更强·深度）",
+                horizontal=True, key="div_ai_model",
+            )
+
+            def _build_div_payload() -> dict:
+                # 仓位占比：从价格缓存估算股票市值权重
+                try:
+                    from core.price_updater import load_cache
+                    _cache = load_cache()
+                    _prices = _cache.get("prices", {}) if _cache else {}
+                except Exception:
+                    _prices = {}
+                weights: dict[str, float] = {}
+                for acc in portfolio.get("accounts", []):
+                    for pos in acc.get("positions", []):
+                        t = pos["yf_ticker"]
+                        px_ = _prices.get(t)
+                        sh = pos.get("shares")
+                        if px_ and sh:
+                            weights[t] = weights.get(t, 0.0) + px_ * sh
+                tot = sum(weights.values()) or 1.0
+
+                per = []
+                for _, r in triggered_div.iterrows():
+                    per.append({
+                        "股票": r["display"],
+                        "灯": r["div_light"],
+                        "背驰": r["signal"],
+                        "说明": r["note"],
+                        "现价": r["price"],
+                        "DIF": r["dif"], "DEA": r["dea"], "MACD柱": r["macd_hist"],
+                        "MACD状态": r["macd_state"],
+                        "量能分": ema_map_div.get(r["ticker"]),
+                        "相对强度": rs_map_div.get(r["ticker"]),
+                        "占比%": round(weights.get(r["ticker"], 0.0) / tot * 100, 1),
+                    })
+                return {
+                    "回看窗口": f"{MACD_LOOKBACK} 交易日",
+                    "MACD参数": "12/26/9",
+                    "口径": "价格枢轴 vs DIF 背驰；顶背驰=价新高但DIF不新高(DIF>0)；"
+                            "底背驰=价新低但DIF不新低(DIF<0)；仅列最新枢轴在近30根内的有效背驰",
+                    "组合概览": {"触发数": len(triggered_div), "顶背驰": n_top, "底背驰": n_bot},
+                    "触发预警": per,
+                }
+
+            @st.cache_data(show_spinner="🤖 AI 正在解读背驰…", ttl=1800)
+            def _cached_div_review(cache_key: str, payload: dict, model: str) -> dict:
+                return ai_review.divergence_review(payload, model=model)
+
+            if st.button("🩺 生成 AI 背驰解读", type="primary", key="gen_div_review"):
+                payload = _build_div_payload()
+                ck = f"{ph}|{div_ai_model}|{len(triggered_div)}|{n_top}|{n_bot}"
+                try:
+                    res = _cached_div_review(ck, payload, div_ai_model)
+                except llm.LLMError as e:
+                    st.error(f"AI 解读失败：{e}")
+                    res = None
+
+                if res:
+                    if res.get("overview"):
+                        st.markdown(f"### {res['overview']}")
+                    ct, cb = st.columns(2)
+                    with ct:
+                        if res.get("top_div"):
+                            st.markdown("#### 🔴 顶背驰·警惕见顶")
+                            for o in res["top_div"]:
+                                st.markdown(f"- **{o.get('ticker','')}**：{o.get('note','')}")
+                    with cb:
+                        if res.get("bottom_div"):
+                            st.markdown("#### 🟢 底背驰·关注见底")
+                            for o in res["bottom_div"]:
+                                st.markdown(f"- **{o.get('ticker','')}**：{o.get('note','')}")
+                    ca, cr = st.columns(2)
+                    with ca:
+                        if res.get("actions"):
+                            st.markdown("#### 🧭 可关注方向")
+                            for a in res["actions"]:
+                                st.markdown(f"- {a}")
+                    with cr:
+                        if res.get("risks"):
+                            st.markdown("#### ⚠️ 风险")
+                            for rk in res["risks"]:
+                                st.markdown(f"- {rk}")
+                    u = res.get("_usage", {})
+                    st.caption(
+                        f"🤖 {res.get('_model','')} · {u.get('total_tokens','?')} tokens · "
+                        f"~${res.get('_cost_usd',0):.4f} | AI 生成，非投资建议。"
+                    )
+                    with st.expander("🔎 查看喂给 AI 的原始数据"):
+                        st.json(_build_div_payload())
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 技术图表 TAB （独立于量能数据，先渲染以避免量能 st.stop 影响）
