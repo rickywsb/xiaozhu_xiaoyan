@@ -62,14 +62,6 @@
           "note": "Marvell, 32+3+10"
         },
         {
-          "display": "AEHR",
-          "yf_ticker": "AEHR",
-          "shares": 30.0,
-          "sector": "光",
-          "native_currency": "USD",
-          "note": "37+30"
-        },
-        {
           "display": "AAOX",
           "yf_ticker": "AAOX",
           "shares": 3.0,
