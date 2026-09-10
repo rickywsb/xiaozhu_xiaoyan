@@ -8,31 +8,31 @@
         {
           "display": "NVDA",
           "yf_ticker": "NVDA",
-          "shares": 141.0,
+          "shares": 146.0,
           "sector": "配置",
           "native_currency": "USD",
-          "note": ""
+          "note": "10.14"
         },
         {
           "display": "MU",
           "yf_ticker": "MU",
-          "shares": 76.32,
+          "shares": 94.329,
           "sector": "存",
           "native_currency": "USD",
-          "note": "33+6.32"
+          "note": "6+7+6.32+32+4+42.009+1"
         },
         {
           "display": "LITE",
           "yf_ticker": "LITE",
-          "shares": 37.0,
+          "shares": 38.0,
           "sector": "光",
           "native_currency": "USD",
           "note": ""
         },
         {
-          "display": "AVGO",
-          "yf_ticker": "AVGO",
-          "shares": 5.0,
+          "display": "AVGX",
+          "yf_ticker": "AVGX",
+          "shares": 100.0,
           "sector": "配置",
           "native_currency": "USD",
           "note": "63+21.039+5+2.998"
@@ -40,23 +40,15 @@
         {
           "display": "COHR",
           "yf_ticker": "COHR",
-          "shares": 41.5,
+          "shares": 45.5,
           "sector": "光",
           "native_currency": "USD",
-          "note": ""
-        },
-        {
-          "display": "SIVEF",
-          "yf_ticker": "SIVEF",
-          "shares": 6000.0,
-          "sector": "光",
-          "native_currency": "USD",
-          "note": "OTC"
+          "note": "10+19+5+11.5"
         },
         {
           "display": "GLW",
           "yf_ticker": "GLW",
-          "shares": 50.0,
+          "shares": 40.0,
           "sector": "光",
           "native_currency": "USD",
           "note": ""
@@ -72,7 +64,7 @@
         {
           "display": "AEHR",
           "yf_ticker": "AEHR",
-          "shares": 67.0,
+          "shares": 30.0,
           "sector": "光",
           "native_currency": "USD",
           "note": "37+30"
@@ -86,28 +78,12 @@
           "note": ""
         },
         {
-          "display": "NOK",
-          "yf_ticker": "NOK",
-          "shares": 654.0,
-          "sector": "光",
-          "native_currency": "USD",
-          "note": "350+139+165"
-        },
-        {
           "display": "SNDK",
           "yf_ticker": "SNDK",
-          "shares": 11.0,
+          "shares": 20.0,
           "sector": "存",
           "native_currency": "USD",
-          "note": ""
-        },
-        {
-          "display": "IQE",
-          "yf_ticker": "IQE.L",
-          "shares": 500.0,
-          "sector": "光",
-          "native_currency": "GBp",
-          "note": "伦敦，便士计价"
+          "note": "16+2+2"
         },
         {
           "display": "MSFT",
@@ -120,7 +96,7 @@
         {
           "display": "INTC",
           "yf_ticker": "INTC",
-          "shares": 10.0,
+          "shares": 18.0,
           "sector": "半导体",
           "native_currency": "USD",
           "note": ""
@@ -128,34 +104,10 @@
         {
           "display": "NBIS",
           "yf_ticker": "NBIS",
-          "shares": 35.0,
+          "shares": 45.0,
           "sector": "其他",
           "native_currency": "USD",
-          "note": "Nebius"
-        },
-        {
-          "display": "ARM",
-          "yf_ticker": "ARM",
-          "shares": 20.0,
-          "sector": "半导体",
-          "native_currency": "USD",
-          "note": ""
-        },
-        {
-          "display": "AMD",
-          "yf_ticker": "AMD",
-          "shares": 6.0,
-          "sector": "半导体",
-          "native_currency": "USD",
-          "note": ""
-        },
-        {
-          "display": "LPKF",
-          "yf_ticker": "LPKFF",
-          "shares": 200.0,
-          "sector": "光",
-          "native_currency": "USD",
-          "note": "LPKF Laser OTC"
+          "note": "28+7+10"
         },
         {
           "display": "DRAM",
@@ -187,28 +139,20 @@
           "shares": 26061.0,
           "sector": "现金",
           "native_currency": "USD",
-          "note": "岳入金10000"
+          "note": ""
         },
         {
           "display": "费城半导体",
           "yf_ticker": "SOXX",
-          "shares": 17.0,
+          "shares": 7.0,
           "sector": "半导体",
           "native_currency": "USD",
           "note": "600"
         },
         {
-          "display": "Seagate",
-          "yf_ticker": "STX",
-          "shares": 1.0,
-          "sector": "存",
-          "native_currency": "USD",
-          "note": "None"
-        },
-        {
           "display": "Disk",
           "yf_ticker": "Disk",
-          "shares": 29.0,
+          "shares": 51.0,
           "sector": "存",
           "native_currency": "USD",
           "note": "None"
@@ -216,15 +160,55 @@
         {
           "display": "AMAT",
           "yf_ticker": "AMAT",
-          "shares": 6.0,
+          "shares": 18.0,
+          "sector": "存",
+          "native_currency": "USD",
+          "note": "10+8"
+        },
+        {
+          "display": "KLAC",
+          "yf_ticker": "KLAC",
+          "shares": 20.0,
           "sector": "存",
           "native_currency": "USD",
           "note": "None"
         },
         {
-          "display": "KLAC",
-          "yf_ticker": "KLAC",
-          "shares": 26.0,
+          "display": "SKHY",
+          "yf_ticker": "SKHY",
+          "shares": 61.0,
+          "sector": "存",
+          "native_currency": "USD",
+          "note": "26+31"
+        },
+        {
+          "display": "IBIT",
+          "yf_ticker": "IBIT",
+          "shares": 92.0,
+          "sector": "其他",
+          "native_currency": "USD",
+          "note": "None"
+        },
+        {
+          "display": "GOOGL",
+          "yf_ticker": "GOOGL",
+          "shares": 5.0,
+          "sector": "其他",
+          "native_currency": "USD",
+          "note": "None"
+        },
+        {
+          "display": "SNXX",
+          "yf_ticker": "SNXX",
+          "shares": 7.0,
+          "sector": "存",
+          "native_currency": "USD",
+          "note": "None"
+        },
+        {
+          "display": "WDC",
+          "yf_ticker": "WDC",
+          "shares": 2.0,
           "sector": "存",
           "native_currency": "USD",
           "note": "None"
@@ -232,7 +216,9 @@
       ]
     }
   ],
-  "manual_values": {},
+  "manual_values": {
+    "SIVE": 1200.0
+  },
   "options": [
     {
       "display": "GLW 155 Call",
@@ -289,7 +275,7 @@
       "type": "call",
       "strike": 55.0,
       "contract": "DRAM270617C00055000",
-      "contracts": 2.0,
+      "contracts": 4.0,
       "sector": "存",
       "manual_mark": null,
       "note": "2027-06 到期，2 张"
@@ -305,7 +291,19 @@
       "sector": "半导体",
       "manual_mark": null,
       "note": "半导体 ETF，板块可自行调整"
+    },
+    {
+      "display": "INTC 75 call",
+      "underlying": "INTC",
+      "expiry": "2027-6-17",
+      "type": "call",
+      "strike": 75.0,
+      "contract": "INTC270617C00075000",
+      "contracts": 1.0,
+      "sector": "半导体",
+      "manual_mark": null,
+      "note": "None"
     }
   ],
-  "last_modified": "2026-07-03"
+  "last_modified": "2026-09-10"
 }
