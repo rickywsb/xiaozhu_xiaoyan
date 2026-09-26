@@ -18,6 +18,7 @@ from core import options_review as R
 from core.options import option_sector
 from core import accumulation as accum
 from core import signal_backtest as sbt
+from core import sectors
 from core.daily_momentum import score_holdings, benchmark_returns, absolute_summary
 from core.price_updater import load_cache, update_all_prices
 from core.github_storage import sync_to_github
@@ -200,6 +201,14 @@ def _options_block(cache: dict) -> dict:
     }
 
 
+def _sector_block() -> dict:
+    """全市场板块强弱 / 轮动摘要（板块雷达）；失败不影响日报。"""
+    try:
+        return sectors.daily_summary()
+    except Exception:
+        return {}
+
+
 def _news_block() -> list[dict]:
     out = []
     for theme in ("存储", "光通信", "半导体大盘"):
@@ -280,6 +289,7 @@ if run_full or run_skip:
         "组合概览": _portfolio_block(pf, cache, total_nav),
         "量能": _momentum_block(pf, acc),
         "期权": _options_block(cache),
+        "板块轮动": _sector_block(),
         "资讯": _news_block(),
     }
 

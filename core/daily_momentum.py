@@ -943,7 +943,11 @@ def _score_frame(labels: dict[str, str], window: int, decay: float) -> pd.DataFr
 
     if not rows:
         return pd.DataFrame()
+    return rank_metrics(rows)
 
+
+def rank_metrics(rows: list[dict]) -> pd.DataFrame:
+    """把 calc_metrics 的结果做横截面打分排名（composite / direction / data_lag_days / rank）。"""
     df = pd.DataFrame(rows)
     df["heat"]    = _zscore(0.55 * _zscore(df["heat_a"]) + 0.45 * _zscore(df["heat_b"]))
     df["trend_z"] = _zscore(df["trend_ra"])

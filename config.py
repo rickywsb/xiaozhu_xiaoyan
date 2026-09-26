@@ -63,6 +63,13 @@ SECTOR_BENCHMARKS: dict[str, str] = {
 }
 DEFAULT_BENCHMARK = "SPY"      # 未映射板块 / 大盘对比基准
 
+# ── 板块雷达自定义篮子（等权合成指数，可自行增删成分）──────────────────────────
+CUSTOM_BASKETS: dict[str, list[str]] = {
+    "光模块":  ["LITE", "COHR", "AAOI", "FN", "CIEN", "GLW", "CRDO", "MRVL"],
+    "存储":    ["MU", "SNDK", "WDC", "STX"],
+    "AI电力":  ["VRT", "ETN", "CEG"],
+}
+
 # ── 市场日期：以美东时间为准（云端服务器是 UTC，美东晚 8 点后会跨日）───────────
 MARKET_TZ = "America/New_York"
 

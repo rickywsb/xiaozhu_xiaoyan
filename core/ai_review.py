@@ -207,6 +207,7 @@ def daily_report(
         "量能": {口径, 组合整体, 大盘基准, 领涨: [{ticker, direction, 组合内相对得分, 5日收益%, 20日收益%}], 领跌: [...], 吸筹亮点: [...], 派发预警: [...]},
         "期权": {期权总市值, 净Delta敞口USD, 每日Theta损耗USD, Vega敞口, 时间衰减最快: [...], 归因: {}},
         "资讯": [{theme, title, source}],
+        "板块轮动": {最强板块, 最弱板块, 排名上升最快, 象限分布},
       }
     """
     system = _GUARDRAIL + (
@@ -220,7 +221,7 @@ def daily_report(
         "请严格输出如下 JSON：\n"
         "{\n"
         '  "headline": "一句话today综述（点出今日最重要的一点）",\n'
-        '  "market_note": "结合资讯的行业/市场背景，2~3 句",\n'
+        '  "market_note": "结合资讯与板块轮动的市场背景，2~3 句（哪些板块领先/在改善，组合所在的光/存/半导体板块处于哪个象限）",\n'
         '  "portfolio": {"summary": "持仓结构点评（净值/集中度/板块）", "highlights": ["要点…"]},\n'
         '  "momentum": {"summary": "量能概述", "leaders": [{"ticker": "XX", "note": "为何领涨"}], "laggards": [{"ticker": "XX", "note": "为何走弱"}]},\n'
         '  "options": {"summary": "期权情况点评（敞口/衰减/进场）"},\n'
