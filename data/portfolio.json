@@ -9,7 +9,7 @@
           "display": "NVDA",
           "yf_ticker": "NVDA",
           "shares": 146.0,
-          "sector": "配置",
+          "sector": "半导体",
           "native_currency": "USD",
           "note": "10.14"
         },
@@ -33,7 +33,7 @@
           "display": "AVGX",
           "yf_ticker": "AVGX",
           "shares": 100.0,
-          "sector": "配置",
+          "sector": "半导体",
           "native_currency": "USD",
           "note": "63+21.039+5+2.998"
         },
@@ -153,7 +153,7 @@
           "display": "AMAT",
           "yf_ticker": "AMAT",
           "shares": 18.0,
-          "sector": "存",
+          "sector": "半导体",
           "native_currency": "USD",
           "note": "10+8"
         },
@@ -161,7 +161,7 @@
           "display": "KLAC",
           "yf_ticker": "KLAC",
           "shares": 20.0,
-          "sector": "存",
+          "sector": "半导体",
           "native_currency": "USD",
           "note": "None"
         },
@@ -297,5 +297,5 @@
       "note": "None"
     }
   ],
-  "last_modified": "2026-09-10"
+  "last_modified": "2026-09-26"
 }
