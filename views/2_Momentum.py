@@ -1,4 +1,4 @@
-"""pages/2_Momentum.py — 量能健康报告 + 技术图表"""
+"""views/2_Momentum.py — 量能健康报告 + 技术图表"""
 
 import json
 import sys

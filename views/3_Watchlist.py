@@ -1,4 +1,4 @@
-"""pages/3_Watchlist.py — 潜力 Watch List（Phase 4）"""
+"""views/3_Watchlist.py — 潜力 Watch List（Phase 4）"""
 
 import json
 import sys

@@ -52,7 +52,7 @@ fund_app/
 │   ├── daily_momentum.py    # 动量评分引擎（衰减加权 + z-score）
 │   └── fx.py                # 汇率缓存层
 │
-└── pages/
+└── views/
     ├── 1_Portfolio.py       # 持仓净值页
     ├── 2_Momentum.py        # 量能健康报告页
     └── 3_Watchlist.py       # Watch List（开发中）

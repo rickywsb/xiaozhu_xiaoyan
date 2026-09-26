@@ -72,7 +72,7 @@ fund_app/
 │   ├── weekly_tracker.py    ← 周度快照对比（迁移自 weekly_tracker.py）
 │   └── fx.py                ← 汇率缓存层（避免重复请求）
 │
-├── pages/
+├── views/
 │   ├── 1_Portfolio.py       ← 页面：持仓净值
 │   ├── 2_Momentum.py        ← 页面：量能健康报告
 │   └── 3_Watchlist.py       ← 页面：潜力 Watch List
@@ -260,12 +260,12 @@ portfolio.json → [聚合] → DataFrame → [merge price_cache] → 展示表�
 - [x] `core/price_updater.py` — 重构 update_prices.py，输出写 `price_cache.json`
 - [x] `core/fx.py` — FX 缓存模块（60 分钟复用）
 - [x] `app.py` — Streamlit 多页入口（三页导航）
-- [x] `pages/1_Portfolio.py` — 持仓表格 + 一键更新 + 板块饼图 + Top15 柱图
+- [x] `views/1_Portfolio.py` — 持仓表格 + 一键更新 + 板块饼图 + Top15 柱图
 
 ### Phase 2：持仓编辑器 ✅ 已完成 (2026-06-21)
 
 - [x] 板块饼图 + Top 15 市值柱状图
-- [x] `pages/1_Portfolio.py` — Tab 切换：📊 概览 / ✏️ 编辑持仓
+- [x] `views/1_Portfolio.py` — Tab 切换：📊 概览 / ✏️ 编辑持仓
 - [x] `st.data_editor` 可编辑表格（`num_rows="dynamic"` 支持增删行）
   - 列：显示名 / YF Ticker / 持股数 / 板块（下拉+自定义） / 货币（下拉） / 备注
   - 操作：勾选删除 / 底部「+」新增行
@@ -286,7 +286,7 @@ portfolio.json → [聚合] → DataFrame → [merge price_cache] → 展示表�
   - `calc_metrics(ticker, display, close, window, decay)` → dict（单股全量指标）
   - `score_holdings(portfolio, window, decay)` → `pd.DataFrame`（Z-score 综合排序）
   - 趋势信号：`accel = avg_r5 - avg_r20`，映射 ↑↑/↑/→/↓/↓↓
-- [x] `pages/2_Momentum.py` — 三区块布局：
+- [x] `views/2_Momentum.py` — 三区块布局：
   - **① 多周期收益热力图**：`plotly.imshow`，行=ticker（按综合分排序），列=5D/10D/20D/60D，`RdYlGn`，对称色阶
   - **② 综合动量得分排名**：横向柱状图，颜色=加速(绿)/减速(红)，底部20%黄色预警区阴影
   - **③ 预警提示**：`st.warning` 列出得分后20%的持仓 ticker
@@ -298,7 +298,7 @@ portfolio.json → [聚合] → DataFrame → [merge price_cache] → 展示表�
 
 - [x] `data/watchlist.json` — 默认 31 只 ticker 初始化
 - [x] `core/daily_momentum.py` — 新增 `score_ticker_list(tickers, labels, window, decay)` 平铺列表评分函数
-- [x] `pages/3_Watchlist.py` — 三 Tab 布局：
+- [x] `views/3_Watchlist.py` — 三 Tab 布局：
   - **📊 扫描排名** Tab：Top5 卡片 + 散点图（综合分×动量加速，已持仓金色）+ 排名柱图 + 明细表
   - **📈 周度追踪** Tab：保存当日快照 `data/snapshots/YYYY-MM-DD.csv`，对比任意两日快照，排名变化柱图 + Top N 进出告警
   - **✏️ 编辑列表** Tab：`st.data_editor` 增删 ticker + 一键把全部持仓加入 Watch List
@@ -315,8 +315,8 @@ portfolio.json → [聚合] → DataFrame → [merge price_cache] → 展示表�
   - `save_json_to_github(local_path, remote_path, commit_msg, *, token, repo)` → 写回 GitHub
   - `sync_to_github(local_path, remote_path, commit_msg)` → 便捷封装，自动读 `st.secrets`
   - 本地运行时无 token → 静默跳过，仅保存本地（不影响开发体验）
-- [x] `pages/1_Portfolio.py` — 保存按钮调用 `sync_to_github`，结果显示 GitHub 同步状态
-- [x] `pages/3_Watchlist.py` — `_save_watchlist` 自动同步 `data/watchlist.json`
+- [x] `views/1_Portfolio.py` — 保存按钮调用 `sync_to_github`，结果显示 GitHub 同步状态
+- [x] `views/3_Watchlist.py` — `_save_watchlist` 自动同步 `data/watchlist.json`
 - [x] `requirements.txt` — 添加 `requests>=2.31`
 - [x] `runtime.txt` — 改为 `python-3.11` 格式
 - [x] 修复所有文件的 `from __future__ import annotations`（Python 3.14 兼容）
@@ -371,7 +371,7 @@ def load_history() -> pd.DataFrame
     # 返回历史净值 DataFrame
 ```
 
-**页面展示**：在 `pages/1_Portfolio.py` 新增 Tab 或折叠区 **「📈 净值历史」**
+**页面展示**：在 `views/1_Portfolio.py` 新增 Tab 或折叠区 **「📈 净值历史」**
 
 布局：
 ```
@@ -392,11 +392,11 @@ def load_history() -> pd.DataFrame
 
 **待实现清单**：
 - [ ] `core/value_history.py` — `append_value()` / `load_history()`
-- [ ] `pages/1_Portfolio.py` — 新增「📈 净值历史」Tab
+- [ ] `views/1_Portfolio.py` — 新增「📈 净值历史」Tab
   - 时间范围筛选（1M/3M/6M/All）
   - KPI 卡片（较昨日 / 较上周 / 较上月变化%）
   - Plotly 折线图（总净值）+ 柱状图（日涨跌幅，绿涨红跌）
-- [ ] `core/price_updater.py` / `pages/1_Portfolio.py` — 更新价格后自动调用 `append_value()`
+- [ ] `core/price_updater.py` / `views/1_Portfolio.py` — 更新价格后自动调用 `append_value()`
 - [ ] `sync_to_github` 同步 `data/portfolio_value_history.csv`
 
 ---
@@ -452,7 +452,7 @@ def build_candlestick_chart(df: pd.DataFrame, ticker: str,
 └──────────────────────────────────────────────────┘
 ```
 
-**页面位置**：`pages/2_Momentum.py` 新增第四个 Tab **「🕯 技术图表」**
+**页面位置**：`views/2_Momentum.py` 新增第四个 Tab **「🕯 技术图表」**
 
 **选股范围**：持仓 + Watchlist 合集，下拉选择
 
@@ -460,7 +460,7 @@ def build_candlestick_chart(df: pd.DataFrame, ticker: str,
 
 **待实现清单**：
 - [ ] `core/technical_analysis.py` — 四个计算函数 + `build_candlestick_chart()`
-- [ ] `pages/2_Momentum.py` — 新增「🕯 技术图表」Tab
+- [ ] `views/2_Momentum.py` — 新增「🕯 技术图表」Tab
   - 下拉选股（持仓+watchlist）
   - 周期选择（1M/3M/6M/1Y）
   - 指标开关（RSI / MACD / Bollinger）
@@ -519,7 +519,7 @@ Step 1  创建 requirements.txt + config.py
 Step 2  初始化 data/portfolio.json（从 xlsx 手工迁移一次）
 Step 3  迁移 core/price_updater.py（重构为函数，输出写缓存）
 Step 4  写 app.py（多页骨架）
-Step 5  写 pages/1_Portfolio.py（表格 + 一键更新，先跑通逻辑）
+Step 5  写 views/1_Portfolio.py（表格 + 一键更新，先跑通逻辑）
 ```
 
 > 每个 Step 完成后更新本文档的进度状态。
@@ -592,7 +592,7 @@ Step 5  写 pages/1_Portfolio.py（表格 + 一键更新，先跑通逻辑）
 | NOK 13 Call | `NOK261218C00013000` | 5 | 2.92 | $292 | 78.3% | 0.64 |
 
 ### 10.7 UI 接入（已完成）
-- [x] `pages/1_Portfolio.py`：期权行接入自动抓价 + `manual_mark` 编辑列
+- [x] `views/1_Portfolio.py`：期权行接入自动抓价 + `manual_mark` 编辑列
 - [x] 持仓表新增「当日涨跌%」「日变化 USD」列（来自 `compute_changes`）
 - [x] 新增「🎯 期权明细 · 希腊字母」区块：IV/Delta/Gamma/Theta/Vega + ΔIV/ΔDelta
 - [x] 更新价格时 `update_all_prices` 内部调 `save_snapshot` 归档当日快照
@@ -649,7 +649,7 @@ Step 5  写 pages/1_Portfolio.py（表格 + 一键更新，先跑通逻辑）
 
 约定：theta=每日、vega=每 1% IV、iv=小数。归因数学已单元验证（分量和=实际变化）。
 
-### 11.4 `pages/5_Options_Review.py`（新页面「🎯 期权复盘」）
+### 11.4 `views/5_Options_Review.py`（新页面「🎯 期权复盘」）
 
 注册在 `app.py` 的「投资组合」分组下。五个板块：
 
@@ -703,7 +703,7 @@ MFI<20 +1；反向对称扣分。**评分 ≥3 → 🟢疑似吸筹，≤-3 → 
   增持/减持家数 `n_up/n_down`
 - 部分海外/小盘股无 13F 明细 → 优雅降级（净增减显示「—」）。
 
-### 12.4 `pages/2_Momentum.py` — 「🏦 主力吸筹」tab
+### 12.4 `views/2_Momentum.py` — 「🏦 主力吸筹」tab
 
 在原「📈 量能报告 / 🕯 技术图表」间插入第 3 个 tab：
 1. **吸筹信号扫描表** — 汇总卡（吸筹/中性/派发家数）+ 全持仓评分表 + 评分逻辑说明 + 逐股解读 expander。缓存 30 分钟（`_cached_accum`）。
@@ -751,7 +751,7 @@ RSS 2.0 与 Atom 两种格式，单个源抓取失败自动跳过。
 > Gazettabyte（Squarespace `?format=rss`）被 Cloudflare 403、Lightwave 各路径均 404，
 > 故光通信改为纯 Google News 关键词，实测相关性反而更高。
 
-### 13.3 `pages/6_News.py` — 资讯页面（路由 /News）
+### 13.3 `views/6_News.py` — 资讯页面（路由 /News）
 
 - 四个 tab：**💾 存储 / 🔦 光通信 / 🔬 半导体大盘 / 💼 我的持仓**
 - 主题 tab：展示关键词、专属源、**该赛道持仓**（按 `sector` 自动匹配）+ 卡片流
@@ -793,8 +793,8 @@ LLM 只做**解读层**：消费我们已经算好的量化信号（量能、吸
 
 ### 14.4 页面接入
 
-- **B 资讯晨报**：`pages/6_News.py` 顶部「🤖 AI 晨报」expander + 按钮，结果缓存 30 分钟（cache_key 含日期+各主题条数）。
-- **A 持仓诊断**：新页 `pages/7_AI_Review.py`（挂在「投资组合」组），模型档位单选 + 是否结合资讯复选 + 「🩺 生成持仓诊断」按钮。渲染健康分/集中度/赛道暴露/信号背离/亮点/风险/关注，底部显示 token 与成本，另有「查看喂给 AI 的原始数据」expander。
+- **B 资讯晨报**：`views/6_News.py` 顶部「🤖 AI 晨报」expander + 按钮，结果缓存 30 分钟（cache_key 含日期+各主题条数）。
+- **A 持仓诊断**：新页 `views/7_AI_Review.py`（挂在「投资组合」组），模型档位单选 + 是否结合资讯复选 + 「🩺 生成持仓诊断」按钮。渲染健康分/集中度/赛道暴露/信号背离/亮点/风险/关注，底部显示 token 与成本，另有「查看喂给 AI 的原始数据」expander。
 
 ### 14.5 踩坑：板块权重的货币换算
 

@@ -1,4 +1,4 @@
-"""pages/4_Notes.py — 每周交易策略笔记"""
+"""views/4_Notes.py — 每周交易策略笔记"""
 
 import json
 import sys

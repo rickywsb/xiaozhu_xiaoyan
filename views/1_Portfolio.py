@@ -1,4 +1,4 @@
-"""pages/1_Portfolio.py — 持仓净值页面（Phase 1 + Phase 2）"""
+"""views/1_Portfolio.py — 持仓净值页面（Phase 1 + Phase 2）"""
 
 import json
 import sys

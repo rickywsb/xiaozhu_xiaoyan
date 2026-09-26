@@ -1,4 +1,4 @@
-"""pages/9_Sectors.py — 🧭 板块雷达：全市场板块强弱 / 轮动 / 宽度 / 成分股下钻"""
+"""views/9_Sectors.py — 🧭 板块雷达：全市场板块强弱 / 轮动 / 宽度 / 成分股下钻"""
 
 import json
 import sys

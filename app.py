@@ -64,22 +64,24 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# 页面放在 views/ 而不是 pages/：Streamlit 会自动扫描 pages/ 目录，服务刚重启时若首个请求是
+# 子页面链接（如 /Portfolio），会绕过本文件回退成"文件名导航 + 窄布局"。
 pg = st.navigation(
     {
         "投资组合": [
-            st.Page("pages/8_Daily.py", title="📅 每日日报", icon="📅"),
-            st.Page("pages/1_Portfolio.py", title="💼 持仓净值", icon="💼"),
-            st.Page("pages/5_Options_Review.py", title="🎯 期权复盘", icon="🎯"),
-            st.Page("pages/7_AI_Review.py", title="🩺 AI 持仓诊断", icon="🩺"),
+            st.Page("views/8_Daily.py", title="每日日报", icon="📅"),
+            st.Page("views/1_Portfolio.py", title="持仓净值", icon="💼"),
+            st.Page("views/5_Options_Review.py", title="期权复盘", icon="🎯"),
+            st.Page("views/7_AI_Review.py", title="AI 持仓诊断", icon="🩺"),
         ],
         "分析工具": [
-            st.Page("pages/9_Sectors.py", title="🧭 板块雷达", icon="🧭"),
-            st.Page("pages/2_Momentum.py", title="📊 量能健康", icon="📊"),
-            st.Page("pages/3_Watchlist.py", title="🔭 Watch List", icon="🔭"),
-            st.Page("pages/6_News.py", title="📰 行业资讯", icon="📰"),
+            st.Page("views/9_Sectors.py", title="板块雷达", icon="🧭"),
+            st.Page("views/2_Momentum.py", title="量能健康", icon="📊"),
+            st.Page("views/3_Watchlist.py", title="Watch List", icon="🔭"),
+            st.Page("views/6_News.py", title="行业资讯", icon="📰"),
         ],
         "笔记 & 策略": [
-            st.Page("pages/4_Notes.py", title="📓 交易策略笔记", icon="📓"),
+            st.Page("views/4_Notes.py", title="交易策略笔记", icon="📓"),
         ],
     }
 )
