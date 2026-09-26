@@ -1,7 +1,6 @@
 """core/value_history.py — 每日持仓总净值历史记录"""
 
 import sys
-from datetime import date
 from pathlib import Path
 
 import pandas as pd
@@ -18,7 +17,7 @@ def append_value(total_usd: float, note: str = "") -> None:
     追加或更新今日总净值到 CSV。
     同一天多次调用时，用最新值覆盖（upsert by date）。
     """
-    today = date.today().isoformat()
+    today = config.market_today().isoformat()
 
     if HISTORY_PATH.exists():
         df = pd.read_csv(HISTORY_PATH, dtype={"date": str})

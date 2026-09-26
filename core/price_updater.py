@@ -5,22 +5,15 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import yfinance as yf
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import config
 from core.fx import get_fx_rates
-# 原始货币映射（yf_ticker → 原始货币代码）
-# GBp = 英国便士（需 ÷100 转 GBP 再乘汇率）
-_CURRENCY_MAP: dict[str, str] = {
-    "3363.TWO": "TWD",
-    "IQE.L":    "GBp",
-    "000660.KS": "KRW",
-    "7709.HK":  "HKD",
-    "XFAB.PA":  "EUR",
-    "SIVE.ST":  "SEK",
-}
+# 原始货币映射（yf_ticker → 原始货币代码），统一维护在 config
+_CURRENCY_MAP = config.CURRENCY_MAP
 
 
 def _extract_last_close(hist) -> float | None:
@@ -175,7 +168,7 @@ def update_all_prices(portfolio: dict) -> dict:
             failed.append(ticker)
 
     cache = {
-        "updated_at": datetime.now().isoformat(timespec="seconds"),
+        "updated_at": datetime.now(ZoneInfo(config.MARKET_TZ)).replace(tzinfo=None).isoformat(timespec="seconds"),  # 美东时间
         "fx_rates": fx_rates,
         "prices": prices,
         "failed": failed,

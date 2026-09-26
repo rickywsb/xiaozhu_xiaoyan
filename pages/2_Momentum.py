@@ -12,13 +12,14 @@ import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import config
-from core.daily_momentum import PERIODS, score_holdings, fetch_histories, calc_metrics, DEFAULT_DECAY, DEFAULT_WINDOW
+from core.daily_momentum import PERIODS, score_holdings, fetch_histories, DEFAULT_DECAY, DEFAULT_WINDOW
 try:
     from core.daily_momentum import score_holdings_ema, EMA_SPANS
     from core.daily_momentum import fib_alerts, FIB_RATIOS, FIB_LOOKBACK
     from core.daily_momentum import vp_alerts, VP_LOOKBACK, VP_VALUE_AREA
-    from core.daily_momentum import relative_strength, RS_BENCHMARK
-    from core.daily_momentum import divergence_alerts, MACD_LOOKBACK
+    from core.daily_momentum import relative_strength
+    from core.daily_momentum import divergence_alerts, MACD_LOOKBACK, MACD_PIVOT_K
+    from core.daily_momentum import missing_tickers, benchmark_returns, absolute_summary
     _EMA_AVAILABLE = True
 except ImportError:
     # 云端刚更新代码但进程未完全重启时，旧模块可能缺少新函数——优雅降级而非崩溃
@@ -28,8 +29,8 @@ except ImportError:
     FIB_LOOKBACK = 120
     VP_LOOKBACK = 120
     VP_VALUE_AREA = 0.70
-    RS_BENCHMARK = "SOXX"
     MACD_LOOKBACK = 120
+    MACD_PIVOT_K = 5
 from core.technical_analysis import get_ohlcv, build_candlestick_chart
 from core import accumulation as accum
 from core import llm, ai_review
@@ -98,6 +99,17 @@ def _cached_div(portfolio_hash: str, lookback: int) -> pd.DataFrame:
     return divergence_alerts(portfolio, lookback)
 
 
+@st.cache_data(show_spinner=False, ttl=1800)
+def _cached_missing(portfolio_hash: str) -> list[str]:
+    portfolio = json.loads(config.PORTFOLIO_PATH.read_text(encoding="utf-8"))
+    return missing_tickers(portfolio)
+
+
+@st.cache_data(show_spinner=False, ttl=1800)
+def _cached_bench() -> dict:
+    return benchmark_returns()
+
+
 @st.cache_data(show_spinner=False, ttl=21600)
 def _cached_13f(ticker: str) -> dict | None:
     return accum.institutional_summary(ticker)
@@ -161,6 +173,11 @@ ph = _portfolio_hash(portfolio)
 with st.spinner("正在加载量能数据…"):
     df = _cached_score(ph, window, decay)
 
+_missing = _cached_missing(ph) if _EMA_AVAILABLE else []
+if _missing:
+    st.warning("⚠️ 以下持仓下载不到行情数据，未参与本页任何评分：" + "、".join(f"`{t}`" for t in _missing)
+               + "。请检查 portfolio.json 中的 yf_ticker。")
+
 tab_ema, tab_fib, tab_vp, tab_div, tab_momentum, tab_accum, tab_chart = st.tabs(
     ["🚦 EMA量能", "🎯 Fib预警", "📊 筹码分布", "⚡ 背驰", "📈 量能报告", "🏦 主力吸筹", "🕯 技术图表"])
 
@@ -199,15 +216,20 @@ with tab_ema:
         show_ema["乖离%"] = show_ema["dev"] * 100
         show_ema["斜率%(5日)"] = show_ema["slope"] * 100
 
-        # 相对强度 RS（vs SOXX）并入表格
+        # 相对强度 RS（vs 板块基准 / vs 大盘）并入表格
         rs_df = _cached_rs(ph) if _EMA_AVAILABLE else pd.DataFrame()
         has_rs = not rs_df.empty
         if has_rs:
             rs_map = {r["ticker"]: r for _, r in rs_df.iterrows()}
             show_ema["相对强度"] = show_ema["ticker"].map(
                 lambda t: rs_map[t]["rs_tag"] if t in rs_map else None)
-            show_ema[f"vs{RS_BENCHMARK}%(3月)"] = show_ema["ticker"].map(
+            show_ema["基准"] = show_ema["ticker"].map(
+                lambda t: rs_map[t]["benchmark"] if t in rs_map else None)
+            show_ema["vs基准%(3月)"] = show_ema["ticker"].map(
                 lambda t: rs_map[t]["rs_3m"] * 100 if t in rs_map else None)
+            show_ema[f"vs{config.DEFAULT_BENCHMARK}%(3月)"] = show_ema["ticker"].map(
+                lambda t: rs_map[t]["rs_mkt_3m"] * 100
+                if t in rs_map and pd.notna(rs_map[t]["rs_mkt_3m"]) else None)
             show_ema["RS排名"] = show_ema["ticker"].map(
                 lambda t: rs_map[t]["rs_rank"] if t in rs_map else None)
 
@@ -217,21 +239,24 @@ with tab_ema:
         })
         cols = ["灯", "股票", "量能分", "状态", "现价", f"EMA{m_span}", "乖离%", "斜率%(5日)"]
         if has_rs:
-            cols += ["相对强度", f"vs{RS_BENCHMARK}%(3月)", "RS排名"]
+            cols += ["相对强度", "基准", "vs基准%(3月)", f"vs{config.DEFAULT_BENCHMARK}%(3月)", "RS排名"]
         col_cfg = {
             "量能分": st.column_config.ProgressColumn(
                 "量能分", format="%d", min_value=0, max_value=100,
                 help="0-100，越高趋势越强",
             ),
-            "现价": st.column_config.NumberColumn("现价", format="$%.2f"),
-            f"EMA{m_span}": st.column_config.NumberColumn(f"EMA{m_span}", format="$%.2f"),
+            "现价": st.column_config.NumberColumn("现价", format="%.2f", help="本币价格"),
+            f"EMA{m_span}": st.column_config.NumberColumn(f"EMA{m_span}", format="%.2f", help="本币"),
             "乖离%": st.column_config.NumberColumn("乖离%", format="%+.1f%%"),
             "斜率%(5日)": st.column_config.NumberColumn("斜率%(5日)", format="%+.2f%%"),
         }
         if has_rs:
-            col_cfg[f"vs{RS_BENCHMARK}%(3月)"] = st.column_config.NumberColumn(
-                f"vs{RS_BENCHMARK}%(3月)", format="%+.1f%%",
-                help=f"近3月个股收益 − {RS_BENCHMARK} 收益，正=跑赢板块")
+            col_cfg["vs基准%(3月)"] = st.column_config.NumberColumn(
+                "vs基准%(3月)", format="%+.1f%%",
+                help="近3月个股美元收益 − 所属板块基准收益，正=跑赢板块")
+            col_cfg[f"vs{config.DEFAULT_BENCHMARK}%(3月)"] = st.column_config.NumberColumn(
+                f"vs{config.DEFAULT_BENCHMARK}%(3月)", format="%+.1f%%",
+                help=f"近3月个股美元收益 − {config.DEFAULT_BENCHMARK} 收益，正=跑赢大盘")
             col_cfg["RS排名"] = st.column_config.ProgressColumn(
                 "RS排名", format="%d", min_value=0, max_value=100,
                 help="组合内相对强度百分位，越高越领涨")
@@ -242,8 +267,10 @@ with tab_ema:
             height=min(560, 80 + len(show_ema) * 35),
         )
         if has_rs:
-            st.caption(f"🏅 **相对强度 RS** = 个股相对 **{RS_BENCHMARK}**(费城半导体) 的强弱："
-                       "领涨=跑赢板块 ≥10% / 落后=跑输 ≥10%；RS排名为组合内百分位。")
+            _bm_txt = " · ".join(f"{k}→{v}" for k, v in config.SECTOR_BENCHMARKS.items())
+            st.caption(f"🏅 **相对强度 RS** = 个股（美元计价）相对**所属板块基准**的强弱（{_bm_txt}，"
+                       f"其余→{config.DEFAULT_BENCHMARK}）：领涨=跑赢基准 ≥10% / 落后=跑输 ≥10%；"
+                       "RS排名为组合内百分位。基准在 config.SECTOR_BENCHMARKS 中调整。")
 
         warn_ema = ema_df[ema_df["ema_score"] < 40]
         if not warn_ema.empty:
@@ -299,13 +326,14 @@ with tab_ema:
                     if has_rs and r["ticker"] in rs_map:
                         _rr = rs_map[r["ticker"]]
                         row["相对强度"] = _rr["rs_tag"]
-                        row[f"vs{RS_BENCHMARK}%(3月)"] = round(_rr["rs_3m"] * 100, 1)
+                        row["基准"] = _rr["benchmark"]
+                        row["vs基准%(3月)"] = round(_rr["rs_3m"] * 100, 1)
                         row["RS排名"] = int(_rr["rs_rank"])
                     per.append(row)
                 return {
                     "EMA参数": f"EMA{s_span}/{m_span}/{l_span}",
                     "评分口径": "0-100；🟢≥70 / 🟡40-69 / 🔴<40；由 位置/排列/斜率/乖离 加权",
-                    "相对强度基准": RS_BENCHMARK if has_rs else None,
+                    "相对强度基准": "按板块：" + str(config.SECTOR_BENCHMARKS) if has_rs else None,
                     "分布": {"🟢强": n_strong, "🟡中": n_mid, "🔴弱": n_weak,
                             "平均分": round(avg_score, 1)},
                     "个股": per,
@@ -772,6 +800,8 @@ with tab_div:
         "🔴 **顶背驰**=价创新高但 MACD 动能走弱(涨势或衰竭) · "
         "🟢 **底背驰**=价创新低但 MACD 动能转强(跌势或衰竭)。"
         "**只列出最新枢轴在近 30 根内的有效背驰**，并附 EMA 量能分 / 相对强度做**共振**参考。"
+        f"⏱ 枢轴需左右各 {MACD_PIVOT_K} 根 K 线确认，**信号天生滞后至少 {MACD_PIVOT_K} 个交易日**，"
+        "出现时价格往往已离开高/低点。"
         "背驰是概率性早期信号，需价格/量能确认，非投资建议。"
     )
 
@@ -912,7 +942,8 @@ with tab_div:
                     "回看窗口": f"{MACD_LOOKBACK} 交易日",
                     "MACD参数": "12/26/9",
                     "口径": "价格枢轴 vs DIF 背驰；顶背驰=价新高但DIF不新高(DIF>0)；"
-                            "底背驰=价新低但DIF不新低(DIF<0)；仅列最新枢轴在近30根内的有效背驰",
+                            "底背驰=价新低但DIF不新低(DIF<0)；仅列最新枢轴在近30根内的有效背驰；"
+                            f"枢轴需右侧{MACD_PIVOT_K}根确认，信号滞后至少{MACD_PIVOT_K}个交易日",
                     "组合概览": {"触发数": len(triggered_div), "顶背驰": n_top, "底背驰": n_bot},
                     "触发预警": per,
                 }
@@ -1107,7 +1138,20 @@ with tab_momentum:
     n_ok = len(df)
     n_total = sum(len(a["positions"]) for a in portfolio.get("accounts", []))
     st.caption(f"📅 基于缓存（30分钟内复用） | {n_ok}/{n_total} 只有效数据 | "
-               f"decay={decay}  window={window}")
+               f"decay={decay}  window={window} | 收益均按美元计价")
+
+    # 绝对参照：下方"强/弱"是组合内相对排名，全体下跌时也会有"强势"
+    summ = absolute_summary(df)
+    bench = _cached_bench() if _EMA_AVAILABLE else {}
+    if summ:
+        a1, a2, *bcols = st.columns(2 + len(bench))
+        a1.metric("组合 20日收益中位数",
+                  f"{summ['median_20d']*100:+.1f}%" if summ["median_20d"] is not None else "—")
+        a2.metric("20日上涨家数", f"{summ['n_up_20d']}/{summ['n']}")
+        for col, (b, r) in zip(bcols, bench.items()):
+            col.metric(f"{b} 20日", f"{r['ret_20d']*100:+.1f}%" if r["ret_20d"] is not None else "—")
+        st.caption("ℹ️ 下方综合得分是**组合内相对排名**：即使全部持仓都在跌，也会有排在前面的\"强势\"股。"
+                   "判断强弱请同时看上面的绝对收益和大盘基准。")
 
     st.divider()
 
@@ -1153,9 +1197,25 @@ with tab_momentum:
     # ② 综合动量得分排名
     # ═══════════════════════════════════════════════════════════════════════════
     st.subheader("② 综合动量得分排名")
-    st.caption("横向柱：综合得分 (z-score)。颜色=动量方向：🟢加速 / 🔴减速。右标=趋势箭头。")
+    st.caption("横向柱：综合得分 (组合内 z-score) = 50% **短期热度**（衰减加权 & 5/10/20 日收益，按波动率调整）"
+               "+ 50% **中期趋势**（6-1 月动量：过去 6 个月、跳过最近 1 个月，按波动率调整）。"
+               "颜色=动量方向：🟢加速 / 🔴减速。右标=趋势箭头。"
+               "标记：⚡N× 杠杆产品 · 💧 低流动性 · ⏳ 数据滞后。")
 
-    rank_df = df[["display", "composite", "accel", "direction", "avg_r5", "avg_r20"]].copy()
+    def _flags(r) -> str:
+        f = []
+        if r.get("leverage", 1) and r.get("leverage", 1) > 1:
+            f.append(f"⚡{int(r['leverage'])}×")
+        if r.get("illiquid"):
+            f.append("💧")
+        if r.get("data_lag_days", 0) and r.get("data_lag_days", 0) >= 1:
+            f.append(f"⏳{int(r['data_lag_days'])}d")
+        return " ".join(f)
+
+    df["flags"] = df.apply(_flags, axis=1)
+    df["label"] = [f"{d} {fl}".strip() for d, fl in zip(df["display"], df["flags"])]
+
+    rank_df = df[["label", "composite", "accel", "direction", "avg_r5", "avg_r20"]].copy()
     rank_df = rank_df.sort_values("composite")   # plotly horizontal bar: bottom=low
 
     colors = [_accel_color(v) for v in rank_df["accel"]]
@@ -1164,7 +1224,7 @@ with tab_momentum:
 
     fig_rank = go.Figure(go.Bar(
         x=rank_df["composite"],
-        y=rank_df["display"],
+        y=rank_df["label"],
         orientation="h",
         marker_color=colors,
         text=labels,
@@ -1195,6 +1255,31 @@ with tab_momentum:
         xaxis=dict(showgrid=True, gridcolor="rgba(128,128,128,0.15)"),
     )
     st.plotly_chart(fig_rank, width="stretch")
+
+    # 动量明细：把热度 / 趋势 / 绝对收益 / 风险标记摊开，避免只看一个 z 分
+    detail = df[["label", "composite", "heat", "trend_z", "trend_6_1", "ret_20d",
+                 "vol_30d", "latest_date"]].copy()
+    detail["trend_6_1"] = detail["trend_6_1"] * 100
+    detail["ret_20d"] = detail["ret_20d"] * 100
+    detail["vol_30d"] = detail["vol_30d"] * 100
+    st.dataframe(
+        detail.rename(columns={
+            "label": "股票", "composite": "综合", "heat": "短期热度",
+            "trend_z": "中期趋势", "trend_6_1": "6-1月收益%", "ret_20d": "20日收益%",
+            "vol_30d": "年化波动%", "latest_date": "数据日期",
+        }),
+        column_config={
+            "综合": st.column_config.NumberColumn(format="%+.2f"),
+            "短期热度": st.column_config.NumberColumn(format="%+.2f", help="组合内 z 分，按波动率调整"),
+            "中期趋势": st.column_config.NumberColumn(format="%+.2f",
+                                                  help="组合内 z 分；上市不足约 7 个月为空，此时综合只用短期热度"),
+            "6-1月收益%": st.column_config.NumberColumn(format="%+.1f%%"),
+            "20日收益%": st.column_config.NumberColumn(format="%+.1f%%"),
+            "年化波动%": st.column_config.NumberColumn(format="%.0f%%"),
+        },
+        width="stretch", hide_index=True,
+        height=min(560, 80 + len(detail) * 35),
+    )
 
     # 预警提示
     warn_df = df[df["composite"] < threshold]
@@ -1248,7 +1333,7 @@ with tab_momentum:
     sel_ticker = sel_row["ticker"]
 
     with st.spinner(f"加载 {selected} 历史数据…"):
-        hist = fetch_histories([sel_ticker], period="3mo")
+        hist = fetch_histories([sel_ticker], period="3mo", usd=True)
         close = hist.get(sel_ticker)
 
     if close is not None and len(close) >= 5:

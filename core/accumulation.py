@@ -27,42 +27,19 @@ import yfinance as yf
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-FETCH_PERIOD = "6mo"
+FETCH_PERIOD = "1y"   # 与 daily_momentum 一致，共享下载缓存
 
 
 # ─── 数据获取 ─────────────────────────────────────────────────────────────────
 
 def fetch_ohlcv_batch(tickers: list[str], period: str = FETCH_PERIOD) -> dict[str, pd.DataFrame]:
-    """批量下载 OHLCV，返回 {ticker: DataFrame[Open,High,Low,Close,Volume]}。"""
-    import config
-    real = [t for t in tickers if t.upper() != config.CASH_TICKER]
-    if not real:
-        return {}
-    try:
-        raw = yf.download(real, period=period, auto_adjust=True,
-                          progress=False, threads=True, group_by="column")
-    except Exception:
-        return {}
-    if raw is None or raw.empty:
-        return {}
+    """批量下载 OHLCV，返回 {ticker: DataFrame[Open,High,Low,Close,Volume]}。
 
-    out: dict[str, pd.DataFrame] = {}
-    fields = ["Open", "High", "Low", "Close", "Volume"]
-    if len(real) == 1:
-        t = real[0]
-        df = raw[[c for c in fields if c in raw.columns]].dropna(subset=["Close"])
-        if not df.empty:
-            out[t] = df
-    else:
-        for t in real:
-            try:
-                df = pd.DataFrame({f: raw[f][t] for f in fields if f in raw.columns.get_level_values(0)})
-            except Exception:
-                continue
-            df = df.dropna(subset=["Close"])
-            if not df.empty:
-                out[t] = df
-    return out
+    复用 daily_momentum 的共享下载缓存；剔除盘中未收盘的当日 K 线——
+    量比 / CMF / MFI / 放量突破都依赖最后一根的成交量，半天的量会让信号系统性失真。
+    """
+    from core.daily_momentum import fetch_ohlcv_histories
+    return fetch_ohlcv_histories(tickers, period=period, complete_bars_only=True)
 
 
 # ─── 单指标 ───────────────────────────────────────────────────────────────────
@@ -205,13 +182,8 @@ def compute_signals(df: pd.DataFrame) -> dict | None:
 
 def scan_holdings(portfolio: dict, period: str = FETCH_PERIOD) -> pd.DataFrame:
     """扫描所有持仓，返回吸筹/派发信号表（按评分降序）。"""
-    import config
-    ticker_map: dict[str, str] = {}
-    for acc in portfolio.get("accounts", []):
-        for pos in acc.get("positions", []):
-            yf_t = pos["yf_ticker"]
-            if yf_t.upper() != config.CASH_TICKER:
-                ticker_map[yf_t] = pos.get("display", yf_t)
+    from core.daily_momentum import _holding_map
+    ticker_map = _holding_map(portfolio)
 
     data = fetch_ohlcv_batch(list(ticker_map.keys()), period=period)
 

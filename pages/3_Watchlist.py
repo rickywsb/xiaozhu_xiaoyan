@@ -2,7 +2,6 @@
 
 import json
 import sys
-from datetime import date
 from pathlib import Path
 
 import numpy as np
@@ -33,7 +32,7 @@ def _load_watchlist() -> list[str]:
 
 def _save_watchlist(tickers: list[str]):
     config.WATCHLIST_PATH.write_text(
-        json.dumps({"watchlist": tickers, "last_modified": date.today().isoformat()},
+        json.dumps({"watchlist": tickers, "last_modified": config.market_today().isoformat()},
                    ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
@@ -67,7 +66,7 @@ def _list_snapshots() -> list[Path]:
 
 
 def _save_snapshot(df: pd.DataFrame):
-    today = date.today().isoformat()
+    today = config.market_today().isoformat()
     path = SNAPSHOT_DIR / f"{today}.csv"
     cols = ["rank", "ticker", "display", "composite", "accel", "direction",
             "ret_5d", "ret_10d", "ret_20d", "ret_60d", "latest_close", "vol_30d"]

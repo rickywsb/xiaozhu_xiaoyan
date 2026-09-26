@@ -18,7 +18,7 @@
 
 import json
 import sys
-from datetime import date, datetime
+from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -41,7 +41,7 @@ def save_snapshot(positions: dict[str, dict], snap_date: str | None = None) -> P
     positions: {key: {price, value, kind, ...其它指标}}
     key 用股票的 yf_ticker 或期权的 OCC 合约代码。
     """
-    d = snap_date or date.today().isoformat()
+    d = snap_date or config.market_today().isoformat()
     SNAPSHOTS_DIR.mkdir(parents=True, exist_ok=True)
     payload = {
         "date": d,
@@ -79,7 +79,7 @@ def latest_prior_snapshot(before: str | None = None) -> dict | None:
 
     自动跳过周末/节假日无数据的日子——只要文件存在就算。
     """
-    ref = before or date.today().isoformat()
+    ref = before or config.market_today().isoformat()
     prior_dates = [d for d in list_snapshot_dates() if d < ref]
     if not prior_dates:
         return None

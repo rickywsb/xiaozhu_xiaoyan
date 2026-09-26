@@ -6,7 +6,6 @@
 
 import json
 import sys
-from datetime import date
 from pathlib import Path
 
 import pandas as pd
@@ -17,7 +16,7 @@ import config
 from core import llm, ai_review, news
 from core import options_review as R
 from core import accumulation as accum
-from core.daily_momentum import score_holdings
+from core.daily_momentum import score_holdings, benchmark_returns, absolute_summary
 from core.price_updater import load_cache, update_all_prices
 from core.github_storage import sync_to_github
 from core.value_history import append_value, HISTORY_PATH
@@ -89,17 +88,36 @@ def _portfolio_block(pf: dict, cache: dict, total_nav: float) -> dict:
     }
 
 
+def _pct(v) -> float | None:
+    return round(float(v) * 100, 1) if v is not None and pd.notna(v) else None
+
+
+def _mom_row(r) -> dict:
+    row = {"ticker": r["ticker"], "direction": r["direction"],
+           "组合内相对得分": round(float(r["composite"]), 2),
+           "5日收益%": _pct(r["ret_5d"]), "20日收益%": _pct(r["ret_20d"])}
+    if r.get("leverage", 1) > 1:
+        row["杠杆产品"] = f"{int(r['leverage'])}倍"
+    if r.get("illiquid"):
+        row["低流动性"] = True
+    return row
+
+
 def _momentum_block(pf: dict, acc: pd.DataFrame) -> dict:
-    """量能：领涨/领跌 + 吸筹亮点/派发预警。"""
+    """量能：领涨/领跌（附绝对收益）+ 组合/大盘绝对参照 + 吸筹亮点/派发预警。"""
     mom = score_holdings(pf)
     leaders, laggards = [], []
     if not mom.empty:
-        for _, r in mom.head(5).iterrows():
-            leaders.append({"ticker": r["ticker"], "direction": r["direction"],
-                            "momentum": round(float(r["composite"]), 2)})
-        for _, r in mom.tail(5).iloc[::-1].iterrows():
-            laggards.append({"ticker": r["ticker"], "direction": r["direction"],
-                             "momentum": round(float(r["composite"]), 2)})
+        leaders = [_mom_row(r) for _, r in mom.head(5).iterrows()]
+        laggards = [_mom_row(r) for _, r in mom.tail(5).iloc[::-1].iterrows()]
+    summ = absolute_summary(mom)
+    overall = {}
+    if summ:
+        overall = {"20日收益中位数%": _pct(summ["median_20d"]),
+                   "5日收益中位数%": _pct(summ["median_5d"]),
+                   "20日上涨家数": f"{summ['n_up_20d']}/{summ['n']}"}
+    bench = {b: {"5日%": _pct(r["ret_5d"]), "20日%": _pct(r["ret_20d"])}
+             for b, r in benchmark_returns().items()}
     accum_hi, distrib = [], []
     if not acc.empty:
         for _, r in acc.iterrows():
@@ -108,7 +126,10 @@ def _momentum_block(pf: dict, acc: pd.DataFrame) -> dict:
                 accum_hi.append({"ticker": r["代码"], "评分": sc, "判定": r["判定"]})
             elif sc <= -3:
                 distrib.append({"ticker": r["代码"], "评分": sc, "判定": r["判定"]})
-    return {"领涨": leaders, "领跌": laggards,
+    return {"口径": "领涨/领跌为组合内相对排名（短期热度+6-1月趋势，按波动率调整），"
+                    "不代表绝对上涨/下跌，须结合各自收益%与组合整体、大盘基准判断",
+            "组合整体": overall, "大盘基准": bench,
+            "领涨": leaders, "领跌": laggards,
             "吸筹亮点": accum_hi[:6], "派发预警": distrib[:6]}
 
 
@@ -186,7 +207,7 @@ model = llm.DEEP_MODEL if model_label.startswith("gpt-4.1") else llm.DEFAULT_MOD
 cache_now = load_cache() or {}
 if cache_now.get("updated_at"):
     upd = cache_now["updated_at"]
-    is_stale = not str(upd).startswith(date.today().isoformat())
+    is_stale = not str(upd).startswith(config.market_today().isoformat())
     if is_stale:
         st.warning(
             f"⚠️ 当前缓存价格为 **{upd}**，非今日行情。"
@@ -234,14 +255,14 @@ if run_full or run_skip:
     acc = accum.scan_holdings(pf)
 
     payload = {
-        "日期": date.today().isoformat(),
+        "日期": config.market_today().isoformat(),
         "组合概览": _portfolio_block(pf, cache, total_nav),
         "量能": _momentum_block(pf, acc),
         "期权": _options_block(cache),
         "资讯": _news_block(),
     }
 
-    ck = f"{date.today().isoformat()}|{round(total_nav)}|{model}"
+    ck = f"{config.market_today().isoformat()}|{round(total_nav)}|{model}"
     try:
         rep = _cached_report(ck, payload, model)
     except llm.LLMError as e:
