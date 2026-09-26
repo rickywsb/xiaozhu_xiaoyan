@@ -34,6 +34,8 @@ except ImportError:
 from core.technical_analysis import get_ohlcv, build_candlestick_chart
 from core import accumulation as accum
 from core import llm, ai_review
+from core import signal_backtest as sbt
+from core.github_storage import sync_to_github
 
 # ─── 工具 ─────────────────────────────────────────────────────────────────────
 
@@ -115,6 +117,28 @@ def _cached_13f(ticker: str) -> dict | None:
     return accum.institutional_summary(ticker)
 
 
+def _bt_ref(group: str) -> dict:
+    """某分组信号的历史检验结果（喂给 AI 解读）；未做过检验返回空 dict。"""
+    if not _BT:
+        return {}
+    vm = sbt.verdict_map(_BT["summary"])
+    return {name: vm[name] for name, g, _ in sbt.SIGNALS if g == group and name in vm}
+
+
+def _bt_caption(group: str) -> None:
+    """在各 Tab 表格上方显示该组信号的历史成绩（20 日超额 / 胜率 / 判定）。"""
+    ref = _bt_ref(group)
+    if not ref:
+        return
+    parts = []
+    for name, r in ref.items():
+        ex = f"{r['20日平均超额%']:+.1f}%" if r["20日平均超额%"] is not None else "—"
+        wr = f"{r['胜率']:.0%}" if r["胜率"] is not None else "—"
+        parts.append(f"{name} {r['判定']}（超额 {ex} · 胜率 {wr} · n={r['事件数']}）")
+    st.caption(f"📐 **历史检验**（{_BT['run_date']}，信号出现后 20 日 vs 股票池）：" + " ｜ ".join(parts)
+               + "。详见「📐 信号成绩单」。")
+
+
 def _chart_options(portfolio: dict) -> list[tuple[str, str]]:
     """返回 [(label, ticker), …]：持仓 ∪ 关注列表。"""
     opts: dict[str, str] = {}
@@ -149,6 +173,7 @@ def _accel_color(v):
 st.title("📊 量能健康报告")
 
 portfolio = _load_portfolio()
+_BT = sbt.load_result()      # 上次信号历史检验结果（data/signal_backtest.json）
 
 # 侧边栏参数
 with st.sidebar:
@@ -178,8 +203,9 @@ if _missing:
     st.warning("⚠️ 以下持仓下载不到行情数据，未参与本页任何评分：" + "、".join(f"`{t}`" for t in _missing)
                + "。请检查 portfolio.json 中的 yf_ticker。")
 
-tab_ema, tab_fib, tab_vp, tab_div, tab_momentum, tab_accum, tab_chart = st.tabs(
-    ["🚦 EMA量能", "🎯 Fib预警", "📊 筹码分布", "⚡ 背驰", "📈 量能报告", "🏦 主力吸筹", "🕯 技术图表"])
+tab_ema, tab_fib, tab_vp, tab_div, tab_momentum, tab_accum, tab_chart, tab_bt = st.tabs(
+    ["🚦 EMA量能", "🎯 Fib预警", "📊 筹码分布", "⚡ 背驰", "📈 量能报告", "🏦 主力吸筹", "🕯 技术图表",
+     "📐 信号成绩单"])
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # EMA 量能评分 TAB （红绿灯 · 0-100 分 · AI 解读）
@@ -261,6 +287,7 @@ with tab_ema:
             col_cfg["RS排名"] = st.column_config.ProgressColumn(
                 "RS排名", format="%d", min_value=0, max_value=100,
                 help="组合内相对强度百分位，越高越领涨")
+        _bt_caption("EMA量能")
         st.dataframe(
             show_ema[cols],
             column_config=col_cfg,
@@ -337,6 +364,7 @@ with tab_ema:
                     "EMA参数": f"EMA{s_span}/{m_span}/{l_span}",
                     "评分口径": "0-100；🟢≥70 / 🟡40-69 / 🔴<40；由 位置/排列/斜率/乖离 加权",
                     "相对强度基准": "按板块：" + str(config.SECTOR_BENCHMARKS) if has_rs else None,
+                    "信号历史检验": _bt_ref("EMA量能"),
                     "分布": {"🟢强": n_strong, "🟡中": n_mid, "🔴弱": n_weak,
                             "平均分": round(avg_score, 1)},
                     "个股": per,
@@ -448,6 +476,7 @@ with tab_fib:
             })
             cols = ["灯", "股票", "预警", "信号", "现价", "最近Fib位", "该位价",
                     "回撤%", "距最近位%", "量能分", "波段高", "波段低"]
+            _bt_caption("Fib回撤")
             st.dataframe(
                 show_fib[cols],
                 column_config={
@@ -537,6 +566,7 @@ with tab_fib:
                     "波段窗口": f"{FIB_LOOKBACK} 交易日",
                     "口径": "从近半年波段高/低点画 Fib 回撤；retr=回撤进度；"
                             "🔴破位>78.6% / 贴近关键位(±2%) / 🟢强势贴高",
+                    "信号历史检验": _bt_ref("Fib回撤"),
                     "组合概览": {"触发数": len(triggered), "破位数": n_break,
                                 "贴近关键位数": n_near, "强势数": n_strong},
                     "触发预警": per,
@@ -644,6 +674,7 @@ with tab_vp:
             })
             cols = ["灯", "股票", "预警", "信号", "现价", "POC", "VAH", "VAL",
                     "距POC%", "价值区宽度%", "量能分"]
+            _bt_caption("筹码分布")
             st.dataframe(
                 show_vp[cols],
                 column_config={
@@ -738,6 +769,7 @@ with tab_vp:
                     "口径": "近半年日线成交量按价格分箱；POC=成交最密集价位；"
                             "VAH/VAL=价值区上下沿；贴近关键位(±3%)才预警：🟢上破VAH / "
                             "🔴跌破VAL / 🟡测试VAH·测试VAL·回踩POC",
+                    "信号历史检验": _bt_ref("筹码分布"),
                     "组合概览": {"触发数": len(triggered_vp), "上破VAH": n_up,
                                 "跌破VAL": n_down, "测试/回踩": n_watch},
                     "触发预警": per,
@@ -855,6 +887,7 @@ with tab_div:
             })
             cols = ["灯", "股票", "背驰", "说明", "现价", "DIF", "DEA",
                     "MACD柱", "MACD状态", "量能分", "相对强度"]
+            _bt_caption("背驰")
             st.dataframe(
                 show_div[cols],
                 column_config={
@@ -947,6 +980,7 @@ with tab_div:
                     "口径": "价格枢轴 vs DIF 背驰；顶背驰=价新高但DIF不新高(DIF>0)；"
                             "底背驰=价新低但DIF不新低(DIF<0)；仅列最新枢轴在近30根内的有效背驰；"
                             f"枢轴需右侧{MACD_PIVOT_K}根确认，信号滞后至少{MACD_PIVOT_K}个交易日",
+                    "信号历史检验": _bt_ref("背驰"),
                     "组合概览": {"触发数": len(triggered_div), "顶背驰": n_top, "底背驰": n_bot},
                     "触发预警": per,
                 }
@@ -1018,6 +1052,7 @@ with tab_accum:
         m2.metric("🟡 中性", n_neu)
         m3.metric("🔴 疑似派发", n_sell)
 
+        _bt_caption("主力吸筹")
         st.dataframe(
             accum_df.drop(columns=["_reasons"]).style.format({
                 "量比": "{:.2f}", "CMF": "{:+.3f}", "涨跌量比": "{:.2f}",
@@ -1203,12 +1238,13 @@ with tab_momentum:
     st.caption("横向柱：综合得分 (组合内 z-score) = 50% **短期热度**（衰减加权 & 5/10/20 日收益，按波动率调整）"
                "+ 50% **中期趋势**（6-1 月动量：过去 6 个月、跳过最近 1 个月，按波动率调整）。"
                "颜色=动量方向：🟢加速 / 🔴减速。右标=趋势箭头。"
-               "标记：⚡N× 杠杆产品 · 💧 低流动性 · ⏳ 数据滞后。")
+               "标记：⚡N× 杠杆 · 🔻反向产品 · 💧 低流动性 · ⏳ 数据滞后。")
 
     def _flags(r) -> str:
         f = []
-        if r.get("leverage", 1) and r.get("leverage", 1) > 1:
-            f.append(f"⚡{int(r['leverage'])}×")
+        lev = r.get("leverage", 1)
+        if lev and lev != 1:
+            f.append(f"⚡{int(lev)}×" if lev > 0 else f"🔻反向{abs(int(lev))}×")
         if r.get("illiquid"):
             f.append("💧")
         if r.get("data_lag_days", 0) and r.get("data_lag_days", 0) >= 1:
@@ -1265,6 +1301,7 @@ with tab_momentum:
     detail["trend_6_1"] = detail["trend_6_1"] * 100
     detail["ret_20d"] = detail["ret_20d"] * 100
     detail["vol_30d"] = detail["vol_30d"] * 100
+    _bt_caption("综合动量")
     st.dataframe(
         detail.rename(columns={
             "label": "股票", "composite": "综合", "heat": "短期热度",
@@ -1398,3 +1435,75 @@ with tab_momentum:
             "距MA20偏离": f"{sel_row['ma20_dev']*100:+.2f}%" if pd.notna(sel_row.get('ma20_dev')) else "N/A",
         }
         st.table(pd.DataFrame(list(metrics.items()), columns=["指标", "值"]))
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 信号成绩单 TAB （各信号的历史表现：出现后 5/20 日相对股票池的超额）
+# ═══════════════════════════════════════════════════════════════════════════════
+with tab_bt:
+    st.subheader("📐 信号成绩单")
+    st.caption(
+        "把本页各套信号放回过去 ~1.5 年逐日重算（只用当日及以前数据），统计信号**首次出现**后 "
+        "5 / 20 个交易日的表现。**超额** = 个股收益 − 同日股票池平均（扣掉大盘与池子整体涨跌）；"
+        "**胜率** = 跑赢同日股票池中位数的比例（看空信号以跑输为胜，无效信号约 50%）。"
+        "股票池 = 持仓 ∪ 关注列表，排除杠杆/反向产品。"
+    )
+
+    c_info, c_btn = st.columns([4, 1])
+    rerun_bt = c_btn.button("🔄 重新检验", width="stretch",
+                            help="约 1~2 分钟；结果保存并同步到 GitHub，信号表现无需每天重算，每周一次即可")
+    if rerun_bt:
+        wl_tickers = []
+        if config.WATCHLIST_PATH.exists():
+            wl_tickers = json.loads(config.WATCHLIST_PATH.read_text(encoding="utf-8")).get("watchlist", [])
+        universe = sorted({pos["yf_ticker"] for acc in portfolio.get("accounts", [])
+                           for pos in acc.get("positions", [])} | {t.upper().strip() for t in wl_tickers})
+        bar = st.progress(0.0, text="准备数据…")
+
+        def _prog(done: int, total: int, ticker: str) -> None:
+            bar.progress(done / max(total, 1), text=f"正在回放 {ticker}（{done + 1}/{total}）")
+
+        res = sbt.run_backtest(universe, progress=_prog)
+        bar.empty()
+        path = sbt.save_result(res, config.market_today().isoformat())
+        sync_to_github(path, "data/signal_backtest.json", "chore: update signal backtest")
+        _BT = sbt.load_result()
+        st.success(f"✅ 检验完成：{res['meta']['n_tickers']} 只股票 · {res['meta']['n_events']} 个信号事件")
+
+    if not _BT:
+        c_info.info("尚未做过信号检验，点右侧「🔄 重新检验」。")
+    else:
+        meta = _BT.get("meta", {})
+        c_info.caption(f"上次检验：**{_BT['run_date']}** ｜ 回看 {meta.get('start')} → {meta.get('end')} ｜ "
+                       f"{meta.get('n_tickers')} 只股票 · {meta.get('n_events')} 个信号事件")
+
+        bt_show = _BT["summary"].copy()
+        for c in ("5日超额", "20日超额", "胜率"):
+            bt_show[c] = bt_show[c] * 100
+        st.dataframe(
+            bt_show[["判定", "信号", "分组", "预期", "事件数", "股票数", "5日超额", "20日超额", "胜率", "t值"]],
+            column_config={
+                "5日超额": st.column_config.NumberColumn(format="%+.2f%%"),
+                "20日超额": st.column_config.NumberColumn(format="%+.2f%%",
+                    help="信号出现后 20 个交易日，个股收益 − 同日股票池平均收益"),
+                "胜率": st.column_config.NumberColumn(format="%.0f%%",
+                    help="按预期方向：看多=跑赢池子中位数；看空=跑输池子中位数"),
+                "t值": st.column_config.NumberColumn(format="%+.2f",
+                    help="平均超额 / 标准误；事件有重叠与聚集，实际显著性低于数值所示"),
+            },
+            width="stretch", hide_index=True,
+            height=min(600, 80 + len(bt_show) * 35),
+        )
+        st.caption(f"判定：✅ 有效 = 方向正确且 |t|≥{sbt.T_EFFECTIVE} ｜ 🟡 偏弱 = 方向正确但不显著 ｜ "
+                   f"🟡 无效 = 方向相反但不显著 ｜ ❌ 反向 = 显著地与预期相反 ｜ "
+                   f"⚪ 样本不足 = 事件 <{sbt.MIN_EVENTS}。")
+
+        with st.expander("📖 怎么读 & 局限"):
+            st.markdown(
+                "- **比较信号之间谁更靠谱**，而不是预测收益：股票池是你**现在**的持仓与关注，"
+                "回看时天然偏向后来涨得好的股票（幸存者偏差）。\n"
+                "- **❌ 反向**的信号说明在这段行情里，按它操作会系统性吃亏——例如“回踩支撑/底背驰”"
+                "在强趋势市场中常是接飞刀。这类信号更适合当**反向提示**或直接忽略。\n"
+                "- 结果依赖行情阶段（牛市里抄底类信号普遍失效），建议每周重跑，观察是否稳定。\n"
+                "- t 值未校正事件重叠（20 日窗口互相覆盖、同一天多只股票同时触发），实际显著性更低。"
+            )

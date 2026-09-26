@@ -17,6 +17,7 @@ from core import llm, ai_review, news
 from core import options_review as R
 from core.options import option_sector
 from core import accumulation as accum
+from core import signal_backtest as sbt
 from core.daily_momentum import score_holdings, benchmark_returns, absolute_summary
 from core.price_updater import load_cache, update_all_prices
 from core.github_storage import sync_to_github
@@ -105,11 +106,21 @@ def _mom_row(r) -> dict:
     row = {"ticker": r["ticker"], "direction": r["direction"],
            "组合内相对得分": round(float(r["composite"]), 2),
            "5日收益%": _pct(r["ret_5d"]), "20日收益%": _pct(r["ret_20d"])}
-    if r.get("leverage", 1) > 1:
-        row["杠杆产品"] = f"{int(r['leverage'])}倍"
+    lev = r.get("leverage", 1)
+    if lev != 1:
+        row["杠杆产品"] = f"{int(lev)}倍" if lev > 0 else f"反向{abs(int(lev))}倍"
     if r.get("illiquid"):
         row["低流动性"] = True
     return row
+
+
+def _bt_ref(groups: tuple[str, ...]) -> dict:
+    """吸筹 / 综合动量信号的历史检验成绩（没做过检验则为空）。"""
+    res = sbt.load_result()
+    if not res:
+        return {}
+    vm = sbt.verdict_map(res["summary"])
+    return {n: vm[n] for n, g, _ in sbt.SIGNALS if g in groups and n in vm}
 
 
 def _momentum_block(pf: dict, acc: pd.DataFrame) -> dict:
@@ -139,7 +150,8 @@ def _momentum_block(pf: dict, acc: pd.DataFrame) -> dict:
                     "不代表绝对上涨/下跌，须结合各自收益%与组合整体、大盘基准判断",
             "组合整体": overall, "大盘基准": bench,
             "领涨": leaders, "领跌": laggards,
-            "吸筹亮点": accum_hi[:6], "派发预警": distrib[:6]}
+            "吸筹亮点": accum_hi[:6], "派发预警": distrib[:6],
+            "信号历史检验": _bt_ref(("主力吸筹", "综合动量"))}
 
 
 def _options_block(cache: dict) -> dict:

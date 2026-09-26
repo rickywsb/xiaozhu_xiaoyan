@@ -44,10 +44,13 @@ CURRENCY_MAP: dict[str, str] = {
     "SIVE.ST":   "SEK",
 }
 
-# ── 杠杆产品（yf_ticker → 杠杆倍数）：动量排名时单独标注 ──────────────────────
+# ── 杠杆 / 反向产品（yf_ticker → 杠杆倍数，负数=反向）：动量排名时标注，信号检验时排除 ──
 LEVERAGED_TICKERS: dict[str, int] = {
     "7709.HK": 2,   # CSOP SK Hynix Daily 2x
     "AAOX":    2,   # Tradr 2X Long AAOI Daily ETF
+    "AVGX":    2,   # Defiance Daily Target 2X Long AVGO ETF
+    "SNXX":    2,   # Tradr 2X Long SNDK Daily ETF
+    "SOXS":   -3,   # Direxion Daily Semiconductor Bear 3X（反向）
 }
 
 # ── 相对强度基准：按持仓 sector 选板块基准，另统一对比大盘 ──────────────────
