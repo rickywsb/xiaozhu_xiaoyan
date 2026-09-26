@@ -175,7 +175,7 @@ def update_all_prices(portfolio: dict) -> dict:
     }
 
     # ④ 期权：抓价 + Black-Scholes 希腊字母 + 手动覆盖
-    from core.options import fetch_option, resolve_option_value
+    from core.options import fetch_option, resolve_option_value, option_sector
     from core.snapshots import save_snapshot
 
     options_out: dict[str, dict] = {}
@@ -192,7 +192,7 @@ def update_all_prices(portfolio: dict) -> dict:
         r = resolve_option_value(q, contracts=contracts, manual_mark=manual)
         options_out[contract] = {
             "display":          o.get("display", contract),
-            "sector":           o.get("sector", "期权"),
+            "sector":           option_sector(o, portfolio),
             "contracts":        contracts,
             "mark":             r["mark"],
             "value":            r["value"],

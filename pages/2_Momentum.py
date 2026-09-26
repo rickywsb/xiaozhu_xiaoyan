@@ -226,7 +226,8 @@ with tab_ema:
             show_ema["基准"] = show_ema["ticker"].map(
                 lambda t: rs_map[t]["benchmark"] if t in rs_map else None)
             show_ema["vs基准%(3月)"] = show_ema["ticker"].map(
-                lambda t: rs_map[t]["rs_3m"] * 100 if t in rs_map else None)
+                lambda t: rs_map[t]["rs_3m"] * 100
+                if t in rs_map and pd.notna(rs_map[t]["rs_3m"]) else None)
             show_ema[f"vs{config.DEFAULT_BENCHMARK}%(3月)"] = show_ema["ticker"].map(
                 lambda t: rs_map[t]["rs_mkt_3m"] * 100
                 if t in rs_map and pd.notna(rs_map[t]["rs_mkt_3m"]) else None)
@@ -270,7 +271,8 @@ with tab_ema:
             _bm_txt = " · ".join(f"{k}→{v}" for k, v in config.SECTOR_BENCHMARKS.items())
             st.caption(f"🏅 **相对强度 RS** = 个股（美元计价）相对**所属板块基准**的强弱（{_bm_txt}，"
                        f"其余→{config.DEFAULT_BENCHMARK}）：领涨=跑赢基准 ≥10% / 落后=跑输 ≥10%；"
-                       "RS排名为组合内百分位。基准在 config.SECTOR_BENCHMARKS 中调整。")
+                       "RS排名为组合内百分位。基准在 config.SECTOR_BENCHMARKS 中调整；"
+                       "基准上市不足 3 个月时（如 LAZR）3 月列为空，标签按 1 月相对收益。")
 
         warn_ema = ema_df[ema_df["ema_score"] < 40]
         if not warn_ema.empty:
@@ -327,7 +329,8 @@ with tab_ema:
                         _rr = rs_map[r["ticker"]]
                         row["相对强度"] = _rr["rs_tag"]
                         row["基准"] = _rr["benchmark"]
-                        row["vs基准%(3月)"] = round(_rr["rs_3m"] * 100, 1)
+                        row["vs基准%(3月)"] = (round(_rr["rs_3m"] * 100, 1)
+                                              if pd.notna(_rr["rs_3m"]) else None)
                         row["RS排名"] = int(_rr["rs_rank"])
                     per.append(row)
                 return {

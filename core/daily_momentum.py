@@ -480,11 +480,12 @@ def relative_strength(portfolio: dict,
     计算各持仓相对**所属板块基准**（config.SECTOR_BENCHMARKS，按持仓 sector）
     以及相对大盘（config.DEFAULT_BENCHMARK）的相对强度，统一按美元收益计算。
       · benchmark      该持仓使用的板块基准
-      · rs_1m / rs_3m  个股区间收益 − 板块基准区间收益（正=跑赢）
+      · rs_1m / rs_3m  个股区间收益 − 板块基准区间收益（正=跑赢）；
+                       基准上市不足 3 月时 rs_3m 为空，综合分与标签改用 rs_1m
       · rs_mkt_3m      个股 3 月收益 − 大盘 3 月收益
       · rs_score       综合相对收益（1 月 0.4 + 3 月 0.6）
       · rs_rank        组合内百分位排名（0-100，越高越领涨）
-      · rs_tag         领涨(≥+10%) / 同步 / 落后(≤-10%)（按 3 月相对板块基准）
+      · rs_tag         领涨(≥+10%) / 同步 / 落后(≤-10%)（按 3 月相对板块基准，缺则按 1 月）
     基准数据缺失时跳过对应持仓；全部缺失返回空 DataFrame（调用方优雅降级）。
     """
     import config
@@ -509,18 +510,22 @@ def relative_strength(portfolio: dict,
     for t, disp in ticker_map.items():
         c = hist.get(t)
         b_short, b_long = bench_ret.get(bench_of[t], (None, None))
-        if c is None or b_long is None:
+        if c is None:
             continue
         s_short = _total_return(c, w_short)
         s_long  = _total_return(c, w_long)
-        if s_long is None:
-            continue
         rs_1m = (s_short - b_short) if (s_short is not None and b_short is not None) else None
-        rs_3m = s_long - b_long
-        rs_score = (0.4 * rs_1m + 0.6 * rs_3m) if rs_1m is not None else rs_3m
+        rs_3m = (s_long - b_long) if (s_long is not None and b_long is not None) else None
+        if rs_1m is None and rs_3m is None:
+            continue
+        if rs_1m is not None and rs_3m is not None:
+            rs_score = 0.4 * rs_1m + 0.6 * rs_3m
+        else:
+            rs_score = rs_3m if rs_3m is not None else rs_1m
         rows.append({"ticker": t, "display": disp, "benchmark": bench_of[t],
                      "rs_1m": rs_1m, "rs_3m": rs_3m, "rs_score": rs_score,
-                     "rs_mkt_3m": (s_long - mkt_long) if mkt_long is not None else None})
+                     "rs_mkt_3m": (s_long - mkt_long)
+                     if (s_long is not None and mkt_long is not None) else None})
 
     if not rows:
         return pd.DataFrame()
@@ -535,7 +540,7 @@ def relative_strength(portfolio: dict,
             return "落后"
         return "同步"
 
-    df["rs_tag"] = df["rs_3m"].apply(_tag)
+    df["rs_tag"] = df["rs_3m"].fillna(df["rs_1m"]).apply(_tag)
     return df.sort_values("rs_score", ascending=False).reset_index(drop=True)
 
 

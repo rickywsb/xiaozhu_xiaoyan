@@ -54,7 +54,7 @@ LEVERAGED_TICKERS: dict[str, int] = {
 SECTOR_BENCHMARKS: dict[str, str] = {
     "半导体": "SOXX",
     "存":     "SOXX",
-    "光":     "SOXX",
+    "光":     "LAZR",   # Tema Photonics & Optical ETF（2026-06-30 上市，历史不足 3 月时 RS 按 1 月算）
     "配置":   "QQQ",
     "其他":   "QQQ",
 }

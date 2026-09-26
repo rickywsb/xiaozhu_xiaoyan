@@ -69,6 +69,23 @@ def parse_occ(symbol: str) -> dict | None:
     }
 
 
+def option_sector(opt: dict, portfolio: dict) -> str:
+    """
+    期权所属板块：显式填写了（光/存/半导体…）就用填写值；
+    留空或填"期权"时，按标的正股持仓的板块推断（如 GLW call → 光）。
+    标的不在正股持仓里则归"期权"。
+    """
+    sector = str(opt.get("sector") or "").strip()
+    if sector and sector != "期权":
+        return sector
+    und = str(opt.get("underlying") or "").strip().upper()
+    for acc in portfolio.get("accounts", []):
+        for pos in acc.get("positions", []):
+            if pos["yf_ticker"].upper() == und and pos.get("sector"):
+                return pos["sector"]
+    return "期权"
+
+
 def build_occ(underlying: str, expiry: str, option_type: str, strike: float) -> str:
     """由标的/到期日(YYYY-MM-DD)/方向/行权价 生成 OCC 合约代码。"""
     d = datetime.strptime(expiry, "%Y-%m-%d").date()

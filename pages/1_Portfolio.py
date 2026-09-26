@@ -15,7 +15,7 @@ import config
 from core.price_updater import load_cache, update_all_prices
 from core.github_storage import sync_to_github
 from core.value_history import append_value, load_history, HISTORY_PATH
-from core.options import build_occ
+from core.options import build_occ, option_sector
 from core import snapshots
 
 SECTORS    = ["光", "存", "配置", "半导体", "其他", "期权", "现金"]
@@ -138,7 +138,8 @@ def _save_portfolio(portfolio: dict, pos_df: pd.DataFrame,
                 "strike":      strike,
                 "contract":    contract,
                 "contracts":   float(r["张数"]) if pd.notna(r.get("张数")) else 1.0,
-                "sector":      str(r.get("板块", "期权")).strip() or "期权",
+                "sector":      option_sector({"sector": r.get("板块"), "underlying": underlying},
+                                             portfolio),
                 "manual_mark": float(manual_mark) if pd.notna(manual_mark) else None,
                 "note":        str(r.get("备注", "")).strip(),
             })
@@ -171,7 +172,8 @@ def _build_view_df(portfolio: dict, cache: dict) -> tuple[pd.DataFrame, float]:
                 "备注":     pos.get("note", ""),
                 "期权":     False,
             })
-    # 期权（自动抓价 + 手动覆盖）
+    # 期权（自动抓价 + 手动覆盖）；板块按标的归类（GLW call → 光）
+    opt_sector = {o.get("contract"): option_sector(o, portfolio) for o in portfolio.get("options", [])}
     for contract, od in options.items():
         src_tag = "手动" if od.get("source") == "manual" else "抓取"
         note = f"期权·{src_tag}"
@@ -180,7 +182,7 @@ def _build_view_df(portfolio: dict, cache: dict) -> tuple[pd.DataFrame, float]:
         rows.append({
             "_key":     contract,
             "股票":     od.get("display", contract),
-            "板块":     od.get("sector", "期权"),
+            "板块":     opt_sector.get(contract) or od.get("sector", "期权"),
             "持股数":   od.get("contracts"),
             "现价 USD": od.get("mark"),
             "市值 USD": od.get("value"),
@@ -331,6 +333,7 @@ with tab_view:
         st.subheader("🎯 期权明细 · 希腊字母")
         prior_pos = (snapshots.latest_prior_snapshot() or {}).get("positions", {})
         opt_rows = []
+        opt_sector = {o.get("contract"): option_sector(o, portfolio) for o in portfolio.get("options", [])}
         for contract, od in opt_cache.items():
             old = prior_pos.get(contract, {})
             iv_prev = old.get("iv")
@@ -338,7 +341,7 @@ with tab_view:
             iv_now = od.get("iv")
             opt_rows.append({
                 "期权":     od.get("display", contract),
-                "板块":     od.get("sector", "期权"),
+                "板块":     opt_sector.get(contract) or od.get("sector", "期权"),
                 "张数":     od.get("contracts"),
                 "标的价":   od.get("underlying_price"),
                 "标价/股":  od.get("mark"),

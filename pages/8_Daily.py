@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import config
 from core import llm, ai_review, news
 from core import options_review as R
+from core.options import option_sector
 from core import accumulation as accum
 from core.daily_momentum import score_holdings, benchmark_returns, absolute_summary
 from core.price_updater import load_cache, update_all_prices
@@ -71,10 +72,16 @@ def _portfolio_block(pf: dict, cache: dict, total_nav: float) -> dict:
         val = float(px) * float(p.get("shares", 0) or 0) if px else 0.0
         sector_val[sector] = sector_val.get(sector, 0.0) + val
         holding_val.append((p.get("display", t), val))
-    # 期权归入「期权」板块
-    opt_val = sum(float(o["value"]) for o in (cache.get("options") or {}).values() if o.get("value"))
-    if opt_val:
-        sector_val["期权"] = sector_val.get("期权", 0.0) + opt_val
+    # 期权按标的归入板块（GLW call → 光，SOXX call → 半导体），另报期权合计
+    opt_sector = {o.get("contract"): option_sector(o, pf) for o in pf.get("options", [])}
+    opt_val = 0.0
+    for contract, od in (cache.get("options") or {}).items():
+        if not od.get("value"):
+            continue
+        v = float(od["value"])
+        sec = opt_sector.get(contract) or od.get("sector") or "期权"
+        sector_val[sec] = sector_val.get(sec, 0.0) + v
+        opt_val += v
     weights = ({s: round(v / total_nav * 100, 1) for s, v in sector_val.items()}
                if total_nav > 0 else {})
     top = sorted(holding_val, key=lambda x: x[1], reverse=True)[:8]
@@ -84,6 +91,8 @@ def _portfolio_block(pf: dict, cache: dict, total_nav: float) -> dict:
         "总净值USD": round(total_nav, 0),
         "持仓数": sum(1 for _ in _positions(pf)),
         "板块权重(%)": dict(sorted(weights.items(), key=lambda x: -x[1])),
+        "板块权重口径": "期权按市值计入其标的所属板块",
+        "期权合计占比(%)": round(opt_val / total_nav * 100, 1) if total_nav > 0 else None,
         "最大持仓": top_pct,
     }
 
