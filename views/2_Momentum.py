@@ -12,6 +12,7 @@ import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import config
+from core.stock_chart import clickable_table, click_hint
 from core.daily_momentum import PERIODS, score_holdings, fetch_histories, DEFAULT_DECAY, DEFAULT_WINDOW
 try:
     from core.daily_momentum import score_holdings_ema, EMA_SPANS
@@ -171,6 +172,7 @@ def _accel_color(v):
 
 # ─── 页面 ─────────────────────────────────────────────────────────────────────
 st.title("📊 量能健康报告")
+click_hint()
 
 portfolio = _load_portfolio()
 _BT = sbt.load_result()      # 上次信号历史检验结果（data/signal_backtest.json）
@@ -288,11 +290,11 @@ with tab_ema:
                 "RS排名", format="%d", min_value=0, max_value=100,
                 help="组合内相对强度百分位，越高越领涨")
         _bt_caption("EMA量能")
-        st.dataframe(
+        clickable_table(
             show_ema[cols],
             column_config=col_cfg,
             width="stretch", hide_index=True,
-            height=min(560, 80 + len(show_ema) * 35),
+            height=min(560, 80 + len(show_ema) * 35), tickers=list(show_ema["ticker"]), key="mom_ema", names=list(show_ema["股票"])
         )
         if has_rs:
             _bm_txt = " · ".join(f"{k}→{v}" for k, v in config.SECTOR_BENCHMARKS.items())
@@ -477,7 +479,7 @@ with tab_fib:
             cols = ["灯", "股票", "预警", "信号", "现价", "最近Fib位", "该位价",
                     "回撤%", "距最近位%", "量能分", "波段高", "波段低"]
             _bt_caption("Fib回撤")
-            st.dataframe(
+            clickable_table(
                 show_fib[cols],
                 column_config={
                     "现价": st.column_config.NumberColumn("现价", format="$%.2f"),
@@ -492,7 +494,7 @@ with tab_fib:
                         min_value=0, max_value=100, help="EMA 量能分，共振参考"),
                 },
                 width="stretch", hide_index=True,
-                height=min(500, 80 + len(show_fib) * 35),
+                height=min(500, 80 + len(show_fib) * 35), tickers=list(show_fib["ticker"]), key="mom_fib", names=list(show_fib["股票"])
             )
 
             break_rows = triggered[triggered["category"] == "破位预警"]
@@ -675,7 +677,7 @@ with tab_vp:
             cols = ["灯", "股票", "预警", "信号", "现价", "POC", "VAH", "VAL",
                     "距POC%", "价值区宽度%", "量能分"]
             _bt_caption("筹码分布")
-            st.dataframe(
+            clickable_table(
                 show_vp[cols],
                 column_config={
                     "现价": st.column_config.NumberColumn("现价", format="$%.2f"),
@@ -693,7 +695,7 @@ with tab_vp:
                         min_value=0, max_value=100, help="EMA 量能分，共振参考"),
                 },
                 width="stretch", hide_index=True,
-                height=min(500, 80 + len(show_vp) * 35),
+                height=min(500, 80 + len(show_vp) * 35), tickers=list(show_vp["ticker"]), key="mom_vp", names=list(show_vp["股票"])
             )
 
             down_rows = triggered_vp[triggered_vp["category"] == "跌破VAL"]
@@ -888,7 +890,7 @@ with tab_div:
             cols = ["灯", "股票", "背驰", "说明", "现价", "DIF", "DEA",
                     "MACD柱", "MACD状态", "量能分", "相对强度"]
             _bt_caption("背驰")
-            st.dataframe(
+            clickable_table(
                 show_div[cols],
                 column_config={
                     "现价": st.column_config.NumberColumn("现价", format="$%.2f"),
@@ -902,7 +904,7 @@ with tab_div:
                         min_value=0, max_value=100, help="EMA 量能分，共振参考"),
                 },
                 width="stretch", hide_index=True,
-                height=min(500, 80 + len(show_div) * 35),
+                height=min(500, 80 + len(show_div) * 35), tickers=list(show_div["ticker"]), key="mom_div", names=list(show_div["股票"])
             )
 
             top_rows = triggered_div[triggered_div["signal"] == "顶背驰"]
@@ -1053,12 +1055,12 @@ with tab_accum:
         m3.metric("🔴 疑似派发", n_sell)
 
         _bt_caption("主力吸筹")
-        st.dataframe(
+        clickable_table(
             accum_df.drop(columns=["_reasons"]).style.format({
                 "量比": "{:.2f}", "CMF": "{:+.3f}", "涨跌量比": "{:.2f}",
                 "MFI": "{:.0f}", "OBV斜率": "{:+.4f}",
             }, na_rep="—"),
-            width="stretch", hide_index=True,
+            width="stretch", hide_index=True, tickers=list(accum_df["代码"]), key="mom_acc", names=list(accum_df["股票"])
         )
 
         st.caption("**评分逻辑**：CMF>0.05 +2 / OBV上行 +1 / 涨跌量比>1.2 +1 / "
@@ -1302,7 +1304,7 @@ with tab_momentum:
     detail["ret_20d"] = detail["ret_20d"] * 100
     detail["vol_30d"] = detail["vol_30d"] * 100
     _bt_caption("综合动量")
-    st.dataframe(
+    clickable_table(
         detail.rename(columns={
             "label": "股票", "composite": "综合", "heat": "短期热度",
             "trend_z": "中期趋势", "trend_6_1": "6-1月收益%", "ret_20d": "20日收益%",
@@ -1318,7 +1320,7 @@ with tab_momentum:
             "年化波动%": st.column_config.NumberColumn(format="%.0f%%"),
         },
         width="stretch", hide_index=True,
-        height=min(560, 80 + len(detail) * 35),
+        height=min(560, 80 + len(detail) * 35), tickers=list(df["ticker"]), key="mom_detail", names=list(df["display"])
     )
 
     # 预警提示

@@ -12,6 +12,7 @@ import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import config
+from core.stock_chart import clickable_table, click_hint
 from core.daily_momentum import (
     DEFAULT_DECAY, DEFAULT_WINDOW, PERIODS,
     score_ticker_list,
@@ -130,6 +131,7 @@ def _accel_color(v):
 # 页面主体
 # ═══════════════════════════════════════════════════════════════════════════════
 st.title("🔭 潜力 Watch List")
+click_hint()
 
 watchlist = _load_watchlist()
 portfolio_tickers = _load_portfolio_tickers()
@@ -289,7 +291,7 @@ with tab_scan:
     for col in ["5日均收益","20日均收益","30日波动","10日回撤"]:
         if col in show.columns:
             show[col] = show[col].map(lambda v: f"{v*100:+.2f}%" if pd.notna(v) else "N/A")
-    st.dataframe(show, width="stretch", hide_index=True)
+    clickable_table(show, width="stretch", hide_index=True, tickers=list(df["ticker"]), key="wl_scan", names=list(df["display"]) if "display" in df else None)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -317,7 +319,7 @@ with tab_track:
     elif len(snap_files) == 1:
         st.info(f"只有一份快照（{snap_files[0].stem}），再次运行并保存后可比较变化。")
         curr_snap = _load_snapshot(snap_files[0])
-        st.dataframe(curr_snap, width="stretch", hide_index=True)
+        clickable_table(curr_snap, width="stretch", hide_index=True, tickers=list(curr_snap["ticker"]) if "ticker" in curr_snap else [], key="wl_snap")
     else:
         snap_names = [f.stem for f in snap_files]
         col_a, col_b = st.columns(2)
@@ -376,7 +378,7 @@ with tab_track:
                 show_diff = diff[["rank_curr", "display", "ticker", "排名变化",
                                   "composite", "direction"]].copy()
                 show_diff.columns = ["当前排名", "名称", "Ticker", "排名变化", "综合分", "方向"]
-                st.dataframe(show_diff, width="stretch", hide_index=True)
+                clickable_table(show_diff, width="stretch", hide_index=True, tickers=list(diff["ticker"]), key="wl_diff", names=list(diff["display"]))
 
         # 历史快照列表
         with st.expander("🗂 历史快照文件"):

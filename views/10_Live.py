@@ -13,6 +13,7 @@ import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import config
+from core.stock_chart import clickable_table, click_hint
 from core import tracker as tk
 from core import signal_backtest as sbt
 from core.fx import get_fx_rates
@@ -22,6 +23,7 @@ REFRESH_SECONDS = 15
 _GREEN, _RED = "#26a641", "#d73a4a"
 
 st.title("📡 盘中看板")
+click_hint()
 
 
 # ─── 数据 ─────────────────────────────────────────────────────────────────────
@@ -146,12 +148,12 @@ with tab_live:
                 t = part[["name", "ticker", "group", "chg", "pnl_usd"]].copy()
                 t["chg"] = t["chg"] * 100
                 t["pnl_usd"] = t["pnl_usd"].map(_money)
-                st.dataframe(
+                clickable_table(
                     t.rename(columns={"name": "名称", "ticker": "代码", "group": "分组",
                                       "chg": "当日%", "pnl_usd": "盈亏$"})
                      .style.map(_color_pct, subset=["当日%", "盈亏$"])
                      .format({"当日%": "{:+.2f}%"}, na_rep="—"),
-                    width="stretch", hide_index=True,
+                    width="stretch", hide_index=True, tickers=list(part["ticker"]), key=f"live_mv_{title}", names=list(part["name"])
                 )
 
         # ── 关键价位预警（持仓）──
@@ -165,7 +167,7 @@ with tab_live:
             a = alerts.copy()
             a["dist"] = a["dist"] * 100
             a["chg"] = a["chg"] * 100
-            st.dataframe(
+            clickable_table(
                 a[["name", "ticker", "event", "kind", "level", "last", "dist", "chg", "verdict"]]
                 .rename(columns={"name": "名称", "ticker": "代码", "event": "事件", "kind": "类型",
                                  "level": "价位", "last": "现价", "dist": "距价位%", "chg": "当日%",
@@ -173,7 +175,7 @@ with tab_live:
                 .style.map(_color_pct, subset=["当日%"])
                 .format({"价位": "{:,.2f}", "现价": "{:,.2f}", "距价位%": "{:+.1f}%",
                          "当日%": "{:+.2f}%"}, na_rep="—"),
-                width="stretch", hide_index=True,
+                width="stretch", hide_index=True, tickers=list(a["ticker"]), key="live_alerts", names=list(a["name"])
             )
             st.caption("价位按截至昨日的日线计算（本币）；「该类信号历史表现」来自量能健康页的📐信号成绩单，"
                        "❌/🟡 表示这类信号过去并不可靠。")
@@ -184,14 +186,14 @@ with tab_live:
                        "pnl_usd", "bar_date"]].copy()
             t["chg"] = t["chg"] * 100
             t["pnl_usd"] = t["pnl_usd"].map(_money)
-            st.dataframe(
+            clickable_table(
                 t.rename(columns={"name": "名称", "ticker": "代码", "group": "分组", "sector": "板块",
                                   "last": "最新价", "prev_close": "昨收", "chg": "当日%",
                                   "pnl_usd": "盈亏$", "bar_date": "K线日期"})
                  .style.map(_color_pct, subset=["当日%", "盈亏$"])
                  .format({"最新价": "{:,.2f}", "昨收": "{:,.2f}", "当日%": "{:+.2f}%",
                           }, na_rep="—"),
-                width="stretch", hide_index=True, height=min(700, 80 + len(t) * 35),
+                width="stretch", hide_index=True, height=min(700, 80 + len(t) * 35), tickers=list(board["ticker"]), key="live_all", names=list(board["name"])
             )
             st.caption("最新价 / 昨收为本币；盈亏按最新汇率折美元。期权与现金不在此计算。"
                        "K线日期早于其他股票的，多为当地休市（如韩国中秋）。")
@@ -262,7 +264,7 @@ with tab_track:
         show["胜率"] = show.apply(lambda r: f"{r['up_days']}/{r['n_days']}" if r["n_days"] else "—", axis=1)
         for c in ("cum", "excess", "best_day", "worst_day"):
             show[c] = show[c] * 100
-        st.dataframe(
+        clickable_table(
             show[["name", "ticker", "group", "added", "cum", "excess", "胜率", "best_day", "worst_day",
                   "last"]].rename(columns={
                 "name": "名称", "ticker": "代码", "group": "分组", "added": "加入日",
@@ -271,7 +273,7 @@ with tab_track:
             }).style.map(_color_pct, subset=["累计%", "vs SPY%", "最大单日涨%", "最大单日跌%"])
               .format({"累计%": "{:+.2f}%", "vs SPY%": "{:+.2f}%", "最大单日涨%": "{:+.2f}%",
                        "最大单日跌%": "{:+.2f}%", "最新价$": "{:,.2f}"}, na_rep="—"),
-            width="stretch", hide_index=True, height=min(700, 80 + len(show) * 35),
+            width="stretch", hide_index=True, height=min(700, 80 + len(show) * 35), tickers=list(show["ticker"]), key="day0_board", names=list(show["name"])
         )
 
         # ── 每日涨跌热力图 ──

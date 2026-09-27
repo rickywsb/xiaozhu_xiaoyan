@@ -10,11 +10,13 @@ import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import config
+from core.stock_chart import clickable_table, click_hint
 from core import sectors as sc
 from core.daily_momentum import score_ticker_list
 from core import watchlist
 
 st.title("🧭 板块雷达")
+click_hint()
 st.caption(
     "11 个 SPDR 行业 + 9 个主题 ETF + 自定义篮子（光模块 / 存储 / AI电力，等权合成）。"
     "强弱用与持仓**同一套动量打分**（短期热度 + 6-1 月趋势，按波动率调整，板块间相对排名）。"
@@ -111,7 +113,7 @@ with tab_rank:
     show["5日排名变化"] = show["rank_chg"].apply(_chg)
     for c in ("ret_1d", "ret_5d", "ret_20d", "ret_60d", "rs_60d"):
         show[c] = show[c].apply(_pct)
-    st.dataframe(
+    clickable_table(
         show[["rank", "5日排名变化", "name", "key", "group", "composite", "direction",
               "ret_1d", "ret_5d", "ret_20d", "ret_60d", "rs_60d", "quadrant"]].rename(columns={
             "rank": "排名", "name": "板块", "key": "代码", "group": "分组", "composite": "综合",
@@ -128,7 +130,7 @@ with tab_rank:
                                                          help="板块 60 日收益 − SPY 60 日收益"),
         },
         width="stretch", hide_index=True,
-        height=min(860, 80 + len(show) * 35),
+        height=min(860, 80 + len(show) * 35), tickers=[k if g != "自定义" else None for k, g in zip(show["key"], show["group"])], key="sec_rank", names=list(show["name"])
     )
     st.caption("5日排名变化：与 5 个交易日前（按历史价格倒推）相比；自定义篮子为成分等权日收益累乘，"
                "成分在 config.CUSTOM_BASKETS 中调整。")
@@ -242,7 +244,7 @@ with tab_breadth:
             br = br.sort_values("above_ma20", ascending=False)
             for c in ("above_ma20", "above_ma50", "new_high20", "ret_20d"):
                 br[c] = br[c].apply(_pct)
-            st.dataframe(
+            clickable_table(
                 br[["判读", "name", "key", "group", "n", "above_ma20", "above_ma50", "new_high20",
                     "ret_20d"]].rename(columns={
                     "name": "板块", "key": "代码", "group": "分组", "n": "成分数",
@@ -256,7 +258,7 @@ with tab_breadth:
                     "板块20日%": st.column_config.NumberColumn(format="%+.1f%%"),
                 },
                 width="stretch", hide_index=True,
-                height=min(860, 80 + len(br) * 35),
+                height=min(860, 80 + len(br) * 35), tickers=[k if g in ("行业", "主题") else ("SPY" if k == "S&P 500" else None) for k, g in zip(br["key"], br["group"])], key="sec_breadth", names=list(br["name"])
             )
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -277,7 +279,7 @@ with tab_drill:
                      for t in mem["ticker"]]
         for c in ("ret_5d", "ret_20d", "trend_6_1"):
             mem[c] = mem[c].apply(_pct)
-        st.dataframe(
+        clickable_table(
             mem[["rank", "ticker", "display", "标记", "composite", "heat", "trend_z",
                  "ret_5d", "ret_20d", "trend_6_1", "direction"]].rename(columns={
                 "rank": "排名", "ticker": "代码", "display": "名称", "composite": "综合",
@@ -293,7 +295,7 @@ with tab_drill:
                 "6-1月%": st.column_config.NumberColumn(format="%+.1f%%"),
             },
             width="stretch", hide_index=True,
-            height=min(700, 80 + len(mem) * 35),
+            height=min(700, 80 + len(mem) * 35), tickers=list(mem["ticker"]), key="sec_drill", names=list(mem["display"])
         )
 
         # 一键加入关注列表

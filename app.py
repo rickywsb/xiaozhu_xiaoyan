@@ -90,4 +90,9 @@ pg = st.navigation(
     }
 )
 
+# 切换页面时关闭上一页未关的技术图表弹窗（core.stock_chart）
+if st.session_state.get("_last_page") != pg.url_path:
+    st.session_state.pop("_chart_open", None)
+    st.session_state["_last_page"] = pg.url_path
+
 pg.run()

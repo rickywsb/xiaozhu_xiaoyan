@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import config
 from core import screener as S
 from core import watchlist
+from core.stock_chart import clickable_table, click_hint
 
 st.title("🔎 选股器")
 st.caption(
@@ -92,7 +93,8 @@ for c in ("ret_20d", "ret_63d", "dist_high52", "atr_pct", "trend_6_1"):
     show[c] = show[c] * 100
 show["dollar_vol"] = show["dollar_vol"] / 1e6
 show["breakout20"] = show["breakout20"].map({True: "✅", False: ""})
-st.dataframe(
+click_hint()
+clickable_table(
     show[["ticker", "name", "标记", "sector_name", "quadrant", "rs", "ret_20d", "ret_63d", "trend_6_1",
           "dist_high52", "vol_ratio", "breakout20", "atr_pct", "dollar_vol", "last"]].rename(columns={
         "ticker": "代码", "name": "名称", "sector_name": "板块", "quadrant": "板块象限", "rs": "RS",
@@ -112,6 +114,7 @@ st.dataframe(
         "收盘价": st.column_config.NumberColumn(format="%.2f"),
     },
     width="stretch", hide_index=True, height=min(760, 80 + len(show) * 35),
+    tickers=list(show["ticker"]), names=list(show["name"]), key="scr_tbl",
 )
 
 c_sel, c_add = st.columns([4, 1])

@@ -11,11 +11,13 @@ import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import config
+from core.stock_chart import clickable_table, click_hint
 from core import risk as R
 from core import option_scenarios as OS
 from core.price_updater import load_cache
 
 st.title("🧮 期权情景")
+click_hint()
 st.caption(
     "对持有的期权做「如果……会怎样」：标的涨跌、IV 变化、时间流逝对价值的影响。"
     "Black-Scholes 重估，IV 由当前中间价反解（今天、标的不动时盈亏 = 0）。"
@@ -60,7 +62,7 @@ for lg in legs_all:
                  "盈亏平衡涨幅%": s["breakeven_move"] * 100, "IV%": lg["iv"] * 100,
                  "提示": tips[0].split("，")[0] if tips else ""})
 over = pd.DataFrame(rows)
-st.dataframe(
+clickable_table(
     over, hide_index=True, width="stretch",
     column_config={
         "标的价": st.column_config.NumberColumn(format="%.2f"),
@@ -72,7 +74,7 @@ st.dataframe(
         "盈亏平衡涨幅%": st.column_config.NumberColumn(format="%+.1f%%",
                                                   help="按当前价格买入，到期时标的需要涨多少才回本"),
         "IV%": st.column_config.NumberColumn(format="%.0f%%"),
-    },
+    }, tickers=list(over["标的"]), key="optlab_over"
 )
 tot_theta = sum(OS.leg_stats(lg)["theta_day_usd"] for lg in legs_all)
 st.caption(f"全部期权合计：价值 \\${sum(OS.current_value([lg]) for lg in legs_all):,.0f} ｜ "

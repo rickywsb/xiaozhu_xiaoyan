@@ -12,10 +12,11 @@ import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import config
+from core.stock_chart import clickable_table, click_hint
 from core.price_updater import load_cache, update_all_prices
 from core.github_storage import sync_to_github
 from core.value_history import append_value, load_history, HISTORY_PATH
-from core.options import build_occ, option_sector
+from core.options import build_occ, option_sector, parse_occ
 from core import snapshots
 
 SECTORS    = ["光", "存", "配置", "半导体", "其他", "期权", "现金"]
@@ -152,6 +153,16 @@ def _save_portfolio(portfolio: dict, pos_df: pd.DataFrame,
     return portfolio
 
 
+def _row_ticker(key: str) -> str | None:
+    """持仓表行 → 技术图表代码：股票用 yf_ticker，期权取标的，现金 / 手动估值项不弹图。"""
+    if not key or key.upper() == config.CASH_TICKER:
+        return None
+    occ = parse_occ(key)
+    if occ:
+        return occ["root"]
+    return None if key in _load_portfolio().get("manual_values", {}) else key
+
+
 def _build_view_df(portfolio: dict, cache: dict) -> tuple[pd.DataFrame, float]:
     prices  = cache.get("prices", {}) if cache else {}
     options = cache.get("options", {}) if cache else {}
@@ -230,6 +241,7 @@ def _build_view_df(portfolio: dict, cache: dict) -> tuple[pd.DataFrame, float]:
 # ─── 页面 ─────────────────────────────────────────────────────────────────────
 
 st.title("💼 持仓净值")
+click_hint()
 portfolio = _load_portfolio()
 cache     = load_cache()
 
@@ -306,7 +318,7 @@ with tab_view:
     disp = disp.copy()
     disp["量能"] = disp.apply(_ema_cell, axis=1)
 
-    st.dataframe(
+    clickable_table(
         disp[["股票", "板块", "量能", "持股数", "现价 USD", "市值 USD", "涨跌%", "日变化 USD", "占比", "货币", "备注"]],
         column_config={
             "量能": st.column_config.TextColumn(
@@ -321,7 +333,7 @@ with tab_view:
             ),
             "持股数":   st.column_config.NumberColumn("持股数", format="%.4g"),
         },
-        width="stretch", hide_index=True, height=500,
+        width="stretch", hide_index=True, height=500, tickers=[_row_ticker(k) for k in disp["_key"]], key="pf_hold", names=list(disp["股票"])
     )
     if snapshots.latest_prior_snapshot() is None:
         st.caption("ℹ️ 当日涨跌需至少两天快照对比；今天是首次记录，明天更新后即可显示。")

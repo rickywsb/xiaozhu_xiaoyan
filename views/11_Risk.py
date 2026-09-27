@@ -11,12 +11,14 @@ import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import config
+from core.stock_chart import clickable_table, click_hint
 from core import risk as R
 from core.price_updater import load_cache
 
 _GREEN, _RED, _BLUE, _GRAY = "#26a641", "#d73a4a", "#4C9BE8", "#8b949e"
 
 st.title("🛡️ 风险仪表盘")
+click_hint()
 st.caption(
     "期权按 **delta 等效敞口**（delta × 标的价 × 100 × 张数）并入标的与板块。"
     "β / 波动 / VaR 用过去 1 年真实日收益 × 当前敞口回放；压力测试中期权用 Black-Scholes 全额重估。"
@@ -110,7 +112,7 @@ with tab_exp:
         tbl[f"β {b}"] = betas[f"beta_{b}"].reindex(tbl.index) if f"beta_{b}" in betas else None
     tbl["年化波动%"] = betas["vol"].reindex(tbl.index) * 100 if "vol" in betas else None
     tbl = tbl.reset_index().rename(columns={"index": "标的", "underlying": "标的"})
-    st.dataframe(
+    clickable_table(
         tbl[["标的", "板块", "股票市值", "期权等效敞口", "合计敞口", "占净值%", "风险贡献%",
              "β SPY", "β SOXX", "年化波动%"]],
         column_config={
@@ -126,7 +128,7 @@ with tab_exp:
             "β SOXX": st.column_config.NumberColumn(format="%.2f"),
             "年化波动%": st.column_config.NumberColumn(format="%.0f%%"),
         },
-        width="stretch", hide_index=True, height=min(760, 80 + len(tbl) * 35),
+        width="stretch", hide_index=True, height=min(760, 80 + len(tbl) * 35), tickers=list(tbl["标的"]), key="risk_exp"
     )
     st.caption("风险贡献 = 敞口 × (协方差 × 敞口) / 组合方差，高波动且与其他持仓高度相关的标的贡献更大；"
                "风险贡献明显高于敞口占比的，是组合真正的风险来源。"
@@ -206,14 +208,14 @@ with tab_stress:
         st.markdown("**亏损最大的仓位**")
         d = detail[detail["kind"] != "cash"].sort_values("pnl").head(10).copy()
         d["move"] = d["move"] * 100
-        st.dataframe(
+        clickable_table(
             d[["display", "kind", "sector", "move", "value", "pnl"]].rename(columns={
                 "display": "仓位", "kind": "类型", "sector": "板块", "move": "标的涨跌%",
                 "value": "当前市值", "pnl": "盈亏$"}),
             hide_index=True, width="stretch",
             column_config={"标的涨跌%": st.column_config.NumberColumn(format="%+.1f%%"),
                            "当前市值": st.column_config.NumberColumn(format="$%,.0f"),
-                           "盈亏$": st.column_config.NumberColumn(format="$%+,.0f")},
+                           "盈亏$": st.column_config.NumberColumn(format="$%+,.0f")}, tickers=list(d["underlying"]), key="risk_worst", names=list(d["display"])
         )
 
 # ═══════════════════════════════════════════════════════════════════════════════
