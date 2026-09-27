@@ -70,6 +70,7 @@ pg = st.navigation(
     {
         "投资组合": [
             st.Page("views/8_Daily.py", title="每日日报", icon="📅"),
+            st.Page("views/10_Live.py", title="盘中看板", icon="📡"),
             st.Page("views/1_Portfolio.py", title="持仓净值", icon="💼"),
             st.Page("views/5_Options_Review.py", title="期权复盘", icon="🎯"),
             st.Page("views/7_AI_Review.py", title="AI 持仓诊断", icon="🩺"),

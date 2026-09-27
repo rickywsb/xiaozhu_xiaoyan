@@ -689,15 +689,15 @@ def _holding_map(portfolio: dict) -> dict[str, str]:
     return out
 
 
-def _download(tickers: list[str], period: str) -> dict[str, pd.DataFrame]:
+def _download(tickers: list[str], period: str, max_age: float = _DL_TTL) -> dict[str, pd.DataFrame]:
     """
     批量下载日线 OHLCV（auto_adjust），返回 {原样 ticker: DataFrame}。
     yfinance 返回的列名是大写（如 "Disk" → "DISK"），这里按大写匹配后映射回原 ticker。
-    成功结果缓存 _DL_TTL 秒。
+    成功结果缓存；max_age 秒内复用（盘中报价传 0 强制重新下载）。
     """
     key = (tuple(sorted(set(tickers))), period)
     hit = _dl_cache.get(key)
-    if hit and time.time() - hit[0] < _DL_TTL:
+    if hit and time.time() - hit[0] < max_age:
         return hit[1]
 
     try:
