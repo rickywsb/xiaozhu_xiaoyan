@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import config
 from core import sectors as sc
 from core.daily_momentum import score_ticker_list
-from core.github_storage import sync_to_github
+from core import watchlist
 
 st.title("🧭 板块雷达")
 st.caption(
@@ -52,15 +52,6 @@ def _breadth() -> pd.DataFrame:
 def _members_scored(key: str) -> pd.DataFrame:
     members = sc.members_of(key, _sp500())
     return score_ticker_list(list(members), labels=members) if members else pd.DataFrame()
-
-
-def _load_json_list(path: Path, field: str) -> list[str]:
-    if not path.exists():
-        return []
-    try:
-        return [t.upper().strip() for t in json.loads(path.read_text(encoding="utf-8")).get(field, [])]
-    except Exception:
-        return []
 
 
 def _holdings() -> set[str]:
@@ -280,7 +271,7 @@ with tab_drill:
         st.info("该板块暂无成分数据（S&P 500 成分表获取失败或成分为空）。")
     else:
         held = _holdings()
-        watch = set(_load_json_list(config.WATCHLIST_PATH, "watchlist"))
+        watch = set(watchlist.load())
         mem = mem.copy()
         mem["标记"] = [("💼持仓 " if t.upper() in held else "") + ("⭐关注" if t.upper() in watch else "")
                      for t in mem["ticker"]]
@@ -311,11 +302,5 @@ with tab_drill:
         picks = c_sel.multiselect("加入 Watch List", candidates, key=f"add_wl_{key}",
                                   placeholder="选择要关注的成分股")
         if c_add.button("⭐ 加入", disabled=not picks, width="stretch"):
-            new_list = sorted(watch | {p.upper() for p in picks})
-            config.WATCHLIST_PATH.write_text(
-                json.dumps({"watchlist": new_list, "last_modified": config.market_today().isoformat()},
-                           ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
-            sync_to_github(config.WATCHLIST_PATH, "data/watchlist.json", "feat: update watchlist via UI")
+            watchlist.add(picks)
             st.success(f"已加入：{', '.join(picks)}")
