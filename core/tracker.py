@@ -84,8 +84,10 @@ def live_quotes(tickers: list[str]) -> pd.DataFrame:
         if len(c) < 2:
             continue
         last, prev = float(c.iloc[-1]), float(c.iloc[-2])
+        v = df["Volume"].reindex(c.index) if "Volume" in df else None
         rows.append({"ticker": t, "last": last, "prev_close": prev,
                      "chg": last / prev - 1 if prev else None,
+                     "vol": float(v.iloc[-1]) if v is not None and pd.notna(v.iloc[-1]) else None,
                      "bar_date": c.index[-1].date().isoformat()})
     return pd.DataFrame(rows)
 
@@ -323,3 +325,50 @@ def holdings_value_since(tr: dict, uni: dict[str, dict], cum: pd.DataFrame) -> p
     total = val.sum(axis=1)
     b = float(total[total.index <= day0].iloc[-1])
     return total[total.index > day0] / b - 1
+
+
+# ─── 盘中放量 ─────────────────────────────────────────────────────────────────
+
+def volume_alerts(board: pd.DataFrame, status: str, now_et: datetime,
+                  verdicts: dict[str, dict] | None = None, min_vr: float = 1.5) -> tuple[pd.DataFrame, str]:
+    """
+    盘中（或最近交易日）放量：预计全天量比 = 当前量 ÷ 日内已完成占比 ÷ 前 50 日均量。
+    美股交易中按典型日内分布折算；非美股 / 非交易时段按完整日线（占比 = 1）。
+    返回 (预警表, 说明文字)。预警表附"预计信号"（放量上涨 / 放量突破 / 放量下跌）及其历史评级。
+    """
+    from core import volume as vol
+    verdicts = verdicts or {}
+    frac_us = vol.session_fraction(now_et) if status == "交易中" else 1.0
+    if status == "交易中" and frac_us is None:
+        return pd.DataFrame(), f"开盘 {vol.MIN_MINUTES} 分钟内成交量折算误差太大，稍后再看。"
+
+    hist = dm.fetch_ohlcv_histories(list(board["ticker"]), complete_bars_only=True)
+    rows = []
+    for r in board.itertuples():
+        h = hist.get(r.ticker)
+        if h is None or len(h) < 55 or not r.vol:
+            continue
+        # 剔除与报价同一天的完整 K 线（收盘后报价日 = 最后一根完整 K 线），得到"之前"的基准
+        prior = h[h.index.date.astype(str) < r.bar_date] if len(h) else h
+        if len(prior) < 51:
+            continue
+        avg50 = float(prior["Volume"].tail(50).mean())
+        high20 = float(prior["Close"].tail(20).max())
+        frac = frac_us if "." not in r.ticker else 1.0
+        pvr = vol.projected_vr(r.vol, avg50, frac)
+        if pvr is None or pvr < min_vr:
+            continue
+        sig = None
+        if pvr >= vol.SURGE and r.chg >= vol.BIG_MOVE:
+            sig = "放量上涨"
+        elif r.last > high20 and pvr >= vol.BREAKOUT_VR:
+            sig = "放量突破20日高"
+        elif pvr >= vol.SURGE and r.chg <= -vol.BIG_MOVE:
+            sig = "放量下跌"
+        rows.append({"ticker": r.ticker, "name": r.name, "group": r.group, "chg": r.chg, "pvr": pvr,
+                     "vol": r.vol, "avg50": avg50, "breakout": r.last > high20, "signal": sig,
+                     "grade": verdicts.get(sig, {}).get("评级") if sig else None})
+    note = (f"美股按日内典型成交分布折算（已完成约 {frac_us:.0%}），为估算值"
+            if status == "交易中" else "按最近一个完整交易日计算")
+    df = pd.DataFrame(rows)
+    return (df.sort_values("pvr", ascending=False).reset_index(drop=True) if not df.empty else df), note

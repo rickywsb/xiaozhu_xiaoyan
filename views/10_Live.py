@@ -156,6 +156,32 @@ with tab_live:
                     width="stretch", hide_index=True, tickers=list(part["ticker"]), key=f"live_mv_{title}", names=list(part["name"])
                 )
 
+        # ── 盘中放量 ──
+        res_bt = sbt.load_result()
+        vm_bt = sbt.verdict_map(res_bt["summary"]) if res_bt else {}
+        va, vnote = tk.volume_alerts(board[board["group"] != "基准"], status,
+                                     datetime.now(ZoneInfo(config.MARKET_TZ)), vm_bt)
+        st.markdown("**📢 放量预警**（预计全天量比 ≥1.5）")
+        st.caption(vnote + "。信号后括号为📐信号成绩单评级：A 可靠 / B 参考 / C 噪音 / D 反向。")
+        if va.empty:
+            if "分钟内" not in vnote:
+                st.caption("暂无明显放量。")
+        else:
+            vv = va.copy()
+            vv["chg"] = vv["chg"] * 100
+            vv["预计信号"] = [f"{sg}（{gr[0]}）" if sg and gr else (sg or "") for sg, gr in zip(vv["signal"], vv["grade"])]
+            vv["突破"] = vv["breakout"].map({True: "✅", False: ""})
+            clickable_table(
+                vv[["name", "ticker", "group", "pvr", "chg", "突破", "预计信号"]].rename(columns={
+                    "name": "名称", "ticker": "代码", "group": "分组", "pvr": "预计量比", "chg": "当日%"})
+                .style.map(lambda x: "background-color: rgba(232,168,76,0.25); font-weight: 600"
+                           if isinstance(x, (int, float)) and x >= 2 else "", subset=["预计量比"])
+                .map(_color_pct, subset=["当日%"])
+                .format({"预计量比": "{:.2f}", "当日%": "{:+.2f}%"}, na_rep="—"),
+                tickers=list(vv["ticker"]), names=list(vv["name"]), key="live_vol",
+                hide_index=True, width="stretch",
+            )
+
         # ── 关键价位预警（持仓）──
         st.markdown("**🎯 关键价位预警**（持仓：今日穿越或距离 ±1% 以内的 Fib / 筹码价位）")
         lv = _levels(tuple(held["ticker"]))

@@ -27,6 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from core import daily_momentum as dm
 from core.accumulation import compute_signals
+from core.volume import VOLUME_SIGNALS, volume_signals
 
 BT_PERIOD   = "2y"
 WARMUP      = 150          # 前 150 根 K 线只做指标预热（Fib/筹码/MACD 回看 120，6-1 月趋势需 147）
@@ -51,7 +52,7 @@ SIGNALS: list[tuple[str, str, int]] = [
     ("吸筹 疑似派发",        "主力吸筹", -1),
     ("综合动量 前20%",       "综合动量", +1),
     ("综合动量 后20%",       "综合动量", -1),
-]
+] + [(name, "放量", d) for name, d in VOLUME_SIGNALS]
 _EXPECT = {name: d for name, _, d in SIGNALS}
 _GROUP  = {name: g for name, g, _ in SIGNALS}
 
@@ -93,6 +94,8 @@ def _day_signals(ohlcv: pd.DataFrame) -> set[str]:
     m = dm.macd_divergence(close)
     if m and m["trigger"]:
         on.add("MACD 底背驰" if m["signal"] == "底背驰" else "MACD 顶背驰")
+
+    on |= volume_signals(ohlcv)
 
     a = compute_signals(ohlcv.tail(60))
     if a:
@@ -180,6 +183,30 @@ def _verdict(n: int, excess: float | None, t: float | None, expect: int) -> str:
     return "❌ 反向" if abs(t) >= T_EFFECTIVE else "🟡 无效"
 
 
+GRADE_ORDER = {"A 可靠": 0, "B 参考": 1, "D 反向": 2, "C 噪音": 3, "⚪ 样本不足": 4}
+
+
+def grade(verdict: str, expect: int, h1: float | None, h2: float | None) -> str:
+    """
+    综合"整体效果 + 前后两段稳定性"评级：
+      A 可靠  整体显著有效（✅），且前后两段方向都正确
+      B 参考  整体有效但只在一段成立；或方向正确但不显著、两段都正确
+      C 噪音  无效，或方向正确但两段不一致
+      D 反向  整体显著与预期相反，且两段都相反——可当反向提示
+    """
+    if verdict.startswith("⚪"):
+        return "⚪ 样本不足"
+    ok = [x is not None and pd.notna(x) and x * expect > 0 for x in (h1, h2)]
+    bad = [x is not None and pd.notna(x) and x * expect < 0 for x in (h1, h2)]
+    if verdict.startswith("✅"):
+        return "A 可靠" if all(ok) else "B 参考"
+    if verdict == "🟡 偏弱":
+        return "B 参考" if all(ok) else "C 噪音"
+    if verdict.startswith("❌"):
+        return "D 反向" if all(bad) else "C 噪音"
+    return "C 噪音"
+
+
 def run_backtest(tickers: list[str], period: str = BT_PERIOD, progress=None) -> dict:
     """
     对 tickers 做信号历史检验。返回：
@@ -220,6 +247,9 @@ def run_backtest(tickers: list[str], period: str = BT_PERIOD, progress=None) -> 
         events[f"ex_{h}d"] = excess[h].stack().reindex(keys).to_numpy()
     events["med_20d"] = vs_med[20].stack().reindex(keys).to_numpy()
 
+    # 稳定性：按回看区间中点切成前后两段，分别看平均超额
+    mid = days[WARMUP + (len(days) - WARMUP) // 2] if len(days) > WARMUP else None
+
     rows = []
     for name, group, expect in SIGNALS:
         ev = events[events["signal"] == name]
@@ -236,9 +266,19 @@ def run_backtest(tickers: list[str], period: str = BT_PERIOD, progress=None) -> 
         sd = float(x20.std(ddof=1)) if n > 1 else 0.0
         row["t值"] = float(x20.mean() / (sd / math.sqrt(n))) if sd > 0 else None
         row["判定"] = _verdict(n, row["20日超额"], row["t值"], expect)
+        if mid is not None:
+            h1 = ev.loc[ev["date"] < mid, "ex_20d"].dropna()
+            h2 = ev.loc[ev["date"] >= mid, "ex_20d"].dropna()
+            row["前段超额"] = float(h1.mean()) if len(h1) >= 5 else None
+            row["后段超额"] = float(h2.mean()) if len(h2) >= 5 else None
+        else:
+            row["前段超额"] = row["后段超额"] = None
+        row["评级"] = grade(row["判定"], expect, row["前段超额"], row["后段超额"])
         rows.append(row)
 
     summary = pd.DataFrame(rows)
+    summary["_o"] = summary["评级"].map(GRADE_ORDER)
+    summary = summary.sort_values(["_o", "分组"]).drop(columns="_o").reset_index(drop=True)
     first = days[WARMUP] if len(days) > WARMUP else (days[0] if len(days) else None)
     meta = {
         "start": first.date().isoformat() if first is not None else None,
@@ -249,6 +289,12 @@ def run_backtest(tickers: list[str], period: str = BT_PERIOD, progress=None) -> 
     return {"summary": summary, "events": events, "meta": meta}
 
 
+def _legacy_grade(verdict: str) -> str:
+    """旧版结果（无前后段数据）按判定粗略映射评级。"""
+    return {"✅ 有效": "B 参考", "🟡 偏弱": "C 噪音", "🟡 无效": "C 噪音",
+            "❌ 反向": "D 反向"}.get(verdict, "⚪ 样本不足")
+
+
 def verdict_map(summary: pd.DataFrame) -> dict[str, dict]:
     """{信号名: {判定, 胜率, 20日超额, 事件数}}——供页面和 AI 解读引用。"""
     if summary is None or summary.empty:
@@ -256,6 +302,9 @@ def verdict_map(summary: pd.DataFrame) -> dict[str, dict]:
     return {
         r["信号"]: {
             "判定": r["判定"],
+            "评级": r.get("评级") or _legacy_grade(r["判定"]),
+            "分组": r["分组"],
+            "预期": r["预期"],
             "胜率": round(r["胜率"], 2) if pd.notna(r["胜率"]) else None,
             "20日平均超额%": round(r["20日超额"] * 100, 2) if pd.notna(r["20日超额"]) else None,
             "事件数": int(r["事件数"]),
@@ -293,3 +342,26 @@ def load_result() -> dict | None:
         return d
     except Exception:
         return None
+
+
+# ─── 当前信号状态（与回测同口径）─────────────────────────────────────────────
+
+def current_signals(tickers: list[str]) -> dict[str, set[str]]:
+    """
+    {ticker: 当前激活的信号名集合}：用截至最近完整交易日的 1 年日线调用与回测相同的 _day_signals；
+    综合动量前/后 20% 按 tickers 这个池子横截面排名（回测亦按持仓+关注池子排名）。
+    """
+    import config
+    real = [t for t in tickers if t.upper() != config.CASH_TICKER]
+    data = dm.fetch_ohlcv_histories(real, complete_bars_only=True)
+    out = {t: _day_signals(df.tail(INPUT_BARS)) for t, df in data.items() if len(df) > WARMUP}
+    pool = [t for t in real if t.upper() not in config.LEVERAGED_TICKERS]
+    mom = dm.score_ticker_list(pool)
+    if len(mom) >= 10:
+        pct = mom.set_index("ticker")["composite"].rank(pct=True)
+        for t, p in pct.items():
+            if p >= 0.8:
+                out.setdefault(t, set()).add("综合动量 前20%")
+            elif p <= 0.2:
+                out.setdefault(t, set()).add("综合动量 后20%")
+    return out

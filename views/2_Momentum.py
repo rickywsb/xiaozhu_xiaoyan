@@ -36,6 +36,8 @@ from core.technical_analysis import get_ohlcv, build_candlestick_chart
 from core import accumulation as accum
 from core import llm, ai_review
 from core import signal_backtest as sbt
+from core import volume as vol
+from core import watchlist as wlmod
 from core.github_storage import sync_to_github
 
 # ─── 工具 ─────────────────────────────────────────────────────────────────────
@@ -135,9 +137,50 @@ def _bt_caption(group: str) -> None:
     for name, r in ref.items():
         ex = f"{r['20日平均超额%']:+.1f}%" if r["20日平均超额%"] is not None else "—"
         wr = f"{r['胜率']:.0%}" if r["胜率"] is not None else "—"
-        parts.append(f"{name} {r['判定']}（超额 {ex} · 胜率 {wr} · n={r['事件数']}）")
+        parts.append(f"{name} **{r['评级']}**（超额 {ex} · 胜率 {wr} · n={r['事件数']}）")
     st.caption(f"📐 **历史检验**（{_BT['run_date']}，信号出现后 20 日 vs 股票池）：" + " ｜ ".join(parts)
                + "。详见「📐 信号成绩单」。")
+
+
+_GRADE_CSS = {
+    "A 可靠": "background-color: rgba(38,166,65,0.20); font-weight: 600",
+    "B 参考": "background-color: rgba(38,166,65,0.08)",
+    "C 噪音": "color: #8b949e",
+    "D 反向": "background-color: rgba(232,132,76,0.18)",
+    "⚪ 样本不足": "color: #8b949e",
+}
+
+
+def _grade_css(v) -> str:
+    return _GRADE_CSS.get(v, "")
+
+
+def _group_label(group: str) -> str:
+    """Tab 标题上的评级标记，如「· A/C」：该组各信号的评级字母（去重，好→差）。"""
+    if not _BT:
+        return ""
+    vm = sbt.verdict_map(_BT["summary"])
+    letters = sorted({v["评级"][0] for v in vm.values() if v.get("分组") == group and v["评级"][0] in "ABCD"},
+                     key="ABDC".index)
+    return f" · {'/'.join(letters)}" if letters else ""
+
+
+@st.cache_data(show_spinner="🔔 正在计算当前信号…", ttl=1800)
+def _cached_current(tickers: tuple[str, ...]) -> dict:
+    return {t: sorted(v) for t, v in sbt.current_signals(list(tickers)).items()}
+
+
+@st.cache_data(show_spinner="📢 正在计算量比…", ttl=1800)
+def _cached_volume(tickers: tuple[str, ...]) -> pd.DataFrame:
+    from core.daily_momentum import fetch_ohlcv_histories
+    data = fetch_ohlcv_histories(list(tickers), complete_bars_only=True)
+    rows = []
+    for t, d in data.items():
+        stt = vol.volume_stats(d)
+        if stt:
+            rows.append({"ticker": t, **stt, "signals": sorted(vol.volume_signals(d)),
+                         "bar_date": d.index[-1].date().isoformat()})
+    return pd.DataFrame(rows)
 
 
 def _chart_options(portfolio: dict) -> list[tuple[str, str]]:
@@ -205,9 +248,159 @@ if _missing:
     st.warning("⚠️ 以下持仓下载不到行情数据，未参与本页任何评分：" + "、".join(f"`{t}`" for t in _missing)
                + "。请检查 portfolio.json 中的 yf_ticker。")
 
-tab_ema, tab_fib, tab_vp, tab_div, tab_momentum, tab_accum, tab_chart, tab_bt = st.tabs(
-    ["🚦 EMA量能", "🎯 Fib预警", "📊 筹码分布", "⚡ 背驰", "📈 量能报告", "🏦 主力吸筹", "🕯 技术图表",
-     "📐 信号成绩单"])
+(tab_overview, tab_vol, tab_ema, tab_fib, tab_vp, tab_div, tab_momentum, tab_accum,
+ tab_chart, tab_bt) = st.tabs([
+    "🎯 信号总览", f"📢 放量预警{_group_label('放量')}", f"🚦 EMA量能{_group_label('EMA量能')}",
+    f"🎯 Fib预警{_group_label('Fib回撤')}", f"📊 筹码分布{_group_label('筹码分布')}",
+    f"⚡ 背驰{_group_label('背驰')}", f"📈 量能报告{_group_label('综合动量')}",
+    f"🏦 主力吸筹{_group_label('主力吸筹')}", "🕯 技术图表", "📐 信号成绩单"])
+
+_holding_names = {p["yf_ticker"].upper(): p.get("display", p["yf_ticker"])
+                  for a in portfolio.get("accounts", []) for p in a.get("positions", [])
+                  if p["yf_ticker"].upper() != config.CASH_TICKER}
+_watch = [t for t in wlmod.load() if t != config.CASH_TICKER and t not in _holding_names]
+_pool = tuple(sorted(set(_holding_names) | set(_watch)))
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 信号总览 TAB（只突出历史检验可靠的信号，减少干扰）
+# ═══════════════════════════════════════════════════════════════════════════════
+with tab_overview:
+    st.subheader("🎯 信号总览")
+    if not _BT:
+        st.info("尚未做信号历史检验，请先到「📐 信号成绩单」点「🔄 重新检验」。")
+    else:
+        vm = sbt.verdict_map(_BT["summary"])
+        grades = [v["评级"] for v in vm.values()]
+        g = st.columns(4)
+        g[0].metric("🅰 可靠", sum(x.startswith("A") for x in grades), help="整体显著有效，且前后两段都有效")
+        g[1].metric("🅱 参考", sum(x.startswith("B") for x in grades), help="方向正确，但不显著或只在一段有效")
+        g[2].metric("C 噪音", sum(x.startswith("C") for x in grades), help="历史上无预测力，默认隐藏")
+        g[3].metric("D 反向", sum(x.startswith("D") for x in grades),
+                    help="历史上显著与预期相反，只作为反向提示")
+        st.caption(f"评级来自📐信号成绩单（{_BT['run_date']}，持仓+关注共 {_BT.get('meta', {}).get('n_tickers')} 只，"
+                   "信号出现后 20 日相对股票池的超额，并检查前后两段是否一致）。默认只显示 A / B 级。")
+
+        c1, c2 = st.columns(2)
+        incl_wl = c1.toggle("包含关注列表", value=False, key="ov_wl")
+        show_noise = c2.toggle("显示噪音(C)与反向(D)信号", value=False, key="ov_noise")
+        cur = _cached_current(_pool)
+        tickers = list(_holding_names) + (_watch if incl_wl else [])
+
+        detail_rows, per_stock = [], []
+        for t in tickers:
+            bull, bear, rev = [], [], []
+            for sig in cur.get(t, []):
+                v = vm.get(sig, {})
+                gr = v.get("评级", "⚪ 样本不足")
+                ex = v.get("20日平均超额%")
+                if gr[0] in "AB":
+                    (bull if v.get("预期") == "看多" else bear).append(f"{sig}（{gr[0]}）")
+                elif gr[0] == "D":
+                    rev.append(f"{sig}（历史上{'偏空' if v.get('预期') == '看多' else '偏多'}）")
+                if gr[0] in "AB" or show_noise:
+                    detail_rows.append({"股票": _holding_names.get(t, t), "代码": t, "信号": sig, "评级": gr,
+                                        "预期": v.get("预期"), "历史20日超额%": ex, "胜率": v.get("胜率")})
+            if bull or bear or (rev and show_noise):
+                lean = "🟢 偏多" if len(bull) > len(bear) else ("🔴 偏空" if len(bear) > len(bull) else
+                                                              ("🟡 分歧" if bull else "—"))
+                per_stock.append({"股票": _holding_names.get(t, t), "代码": t,
+                                  "分组": "持仓" if t in _holding_names else "关注", "倾向": lean,
+                                  "可靠看多信号": "、".join(bull), "可靠看空信号": "、".join(bear),
+                                  "反向提示": "、".join(rev) if show_noise else ""})
+
+        st.markdown("#### 🔔 当前触发的可靠信号")
+        if not per_stock:
+            st.success("✅ 当前没有持仓触发 A / B 级信号。")
+        else:
+            ps = pd.DataFrame(per_stock)
+            ps["_o"] = ps["倾向"].map({"🔴 偏空": 0, "🟢 偏多": 1, "🟡 分歧": 2, "—": 3})
+            ps = ps.sort_values("_o").drop(columns="_o").reset_index(drop=True)
+            cols = ["股票", "代码", "分组", "倾向", "可靠看多信号", "可靠看空信号"] + (["反向提示"] if show_noise else [])
+            clickable_table(ps[cols], tickers=list(ps["代码"]), names=list(ps["股票"]), key="ov_stocks",
+                            hide_index=True, width="stretch", height=min(600, 80 + len(ps) * 35))
+        if detail_rows:
+            with st.expander(f"📋 逐条信号明细（{len(detail_rows)} 条）"):
+                dr = pd.DataFrame(detail_rows)
+                dr["胜率"] = dr["胜率"].map(lambda x: x * 100 if x is not None else None)
+                st.dataframe(dr.style.map(_grade_css, subset=["评级"])
+                             .format({"历史20日超额%": "{:+.1f}%", "胜率": "{:.0f}%"}, na_rep="—"),
+                             hide_index=True, width="stretch")
+
+        st.markdown("#### 📐 指标评级")
+        sm = _BT["summary"].copy()
+        if "评级" not in sm:
+            sm["评级"] = sm["判定"].map(sbt._legacy_grade)
+        for c in ("20日超额", "前段超额", "后段超额", "胜率"):
+            if c in sm:
+                sm[c] = sm[c] * 100
+        cols = [c for c in ["评级", "信号", "分组", "预期", "20日超额", "前段超额", "后段超额", "胜率", "事件数"]
+                if c in sm]
+        st.dataframe(
+            sm[cols].style.map(_grade_css, subset=["评级"])
+            .format({"20日超额": "{:+.1f}%", "前段超额": "{:+.1f}%", "后段超额": "{:+.1f}%", "胜率": "{:.0f}%"},
+                    na_rep="—"),
+            hide_index=True, width="stretch", height=min(760, 80 + len(sm) * 35),
+        )
+        st.caption("**A 可靠**：整体显著有效且前后两段都有效 ｜ **B 参考**：方向正确但不显著或只一段有效 ｜ "
+                   "**C 噪音**：无预测力 ｜ **D 反向**：显著与预期相反（如抄底类信号在强趋势里接飞刀）。"
+                   "各 Tab 标题上的字母即该组信号的评级。")
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 放量预警 TAB
+# ═══════════════════════════════════════════════════════════════════════════════
+with tab_vol:
+    st.subheader("📢 放量预警")
+    vm = sbt.verdict_map(_BT["summary"]) if _BT else {}
+    def _sig_label(sig: str) -> str:
+        gr = vm.get(sig, {}).get("评级")
+        return f"{sig}（{gr[0]}）" if gr else sig
+    defs = [
+        ("放量上涨", f"量比 ≥{vol.SURGE:g} 且涨 ≥{vol.BIG_MOVE:.0%}"),
+        ("放量突破20日高", f"收盘突破前 20 日最高收盘且量比 ≥{vol.BREAKOUT_VR:g}"),
+        ("口袋支点", "上涨日量 > 前 10 日任一下跌日的量，且站上 MA50"),
+        ("缩量回调", f"站上 MA50，5 日跌 ≥{vol.BIG_MOVE:.0%}，5 日均量 <{vol.DRY_VR:g}× 50 日均量"),
+        ("放量下跌", f"量比 ≥{vol.SURGE:g} 且跌 ≥{vol.BIG_MOVE:.0%}"),
+        ("放量滞涨", f"量比 ≥{vol.SURGE:g} 但涨跌 <{vol.FLAT_MOVE:.0%}，且距 20 日高 ≤3%"),
+    ]
+    st.caption("量比 = 最近完整交易日成交量 ÷ 前 50 日均量。信号定义与评级：  \n" + "  \n".join(
+        f"· **{_sig_label(n)}**：{d}" for n, d in defs)
+        + "  \n盘中（按已交易时间折算的）实时放量请看📡盘中看板。")
+
+    vdf = _cached_volume(_pool)
+    if vdf.empty:
+        st.warning("暂无成交量数据。")
+    else:
+        c1, c2 = st.columns(2)
+        only_hot = c1.toggle("只看量比 ≥1.5 或触发信号", value=True, key="vol_hot")
+        incl_wl_v = c2.toggle("包含关注列表", value=True, key="vol_wl")
+        v = vdf.copy()
+        v["分组"] = v["ticker"].map(lambda t: "持仓" if t in _holding_names else "关注")
+        if not incl_wl_v:
+            v = v[v["分组"] == "持仓"]
+        if only_hot:
+            v = v[(v["vr"] >= 1.5) | v["signals"].map(bool)]
+        v["名称"] = v["ticker"].map(lambda t: _holding_names.get(t, t))
+        v["放量信号"] = v["signals"].map(lambda ss: "、".join(_sig_label(x) for x in ss))
+        v = v.sort_values("vr", ascending=False).reset_index(drop=True)
+        for c in ("ret_1d", "ret_5d", "dist_high20"):
+            v[c] = v[c] * 100
+        if v.empty:
+            st.success("✅ 最近交易日没有明显放量。")
+        else:
+            show_v = v[["名称", "ticker", "分组", "vr", "ret_1d", "vr_5d", "ret_5d", "dist_high20",
+                        "放量信号", "bar_date"]].rename(columns={
+                "ticker": "代码", "vr": "量比", "ret_1d": "当日%", "vr_5d": "5日量比", "ret_5d": "5日%",
+                "dist_high20": "距20日高%", "bar_date": "K线日期"})
+            styled = (show_v.style
+                      .map(lambda x: "background-color: rgba(232,168,76,0.25); font-weight: 600"
+                           if isinstance(x, (int, float)) and x >= vol.SURGE else "", subset=["量比"])
+                      .map(lambda x: f"color: {'#26a641' if x > 0 else '#d73a4a'}"
+                           if isinstance(x, (int, float)) and x else "", subset=["当日%", "5日%"])
+                      .format({"量比": "{:.2f}", "5日量比": "{:.2f}", "当日%": "{:+.2f}%", "5日%": "{:+.2f}%",
+                               "距20日高%": "{:+.1f}%"}, na_rep="—"))
+            clickable_table(styled, tickers=list(v["ticker"]), names=list(v["名称"]), key="vol_tbl",
+                            hide_index=True, width="stretch", height=min(700, 80 + len(v) * 35))
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # EMA 量能评分 TAB （红绿灯 · 0-100 分 · AI 解读）
@@ -1480,14 +1673,20 @@ with tab_bt:
                        f"{meta.get('n_tickers')} 只股票 · {meta.get('n_events')} 个信号事件")
 
         bt_show = _BT["summary"].copy()
-        for c in ("5日超额", "20日超额", "胜率"):
-            bt_show[c] = bt_show[c] * 100
+        if "评级" not in bt_show:
+            bt_show["评级"] = bt_show["判定"].map(sbt._legacy_grade)
+            bt_show["前段超额"] = bt_show["后段超额"] = None
+        for c in ("5日超额", "20日超额", "前段超额", "后段超额", "胜率"):
+            bt_show[c] = pd.to_numeric(bt_show[c], errors="coerce") * 100
         st.dataframe(
-            bt_show[["判定", "信号", "分组", "预期", "事件数", "股票数", "5日超额", "20日超额", "胜率", "t值"]],
+            bt_show[["评级", "判定", "信号", "分组", "预期", "事件数", "股票数", "5日超额", "20日超额",
+                     "前段超额", "后段超额", "胜率", "t值"]],
             column_config={
                 "5日超额": st.column_config.NumberColumn(format="%+.2f%%"),
                 "20日超额": st.column_config.NumberColumn(format="%+.2f%%",
                     help="信号出现后 20 个交易日，个股收益 − 同日股票池平均收益"),
+                "前段超额": st.column_config.NumberColumn(format="%+.1f%%", help="回看区间前半段的 20 日平均超额"),
+                "后段超额": st.column_config.NumberColumn(format="%+.1f%%", help="回看区间后半段的 20 日平均超额"),
                 "胜率": st.column_config.NumberColumn(format="%.0f%%",
                     help="按预期方向：看多=跑赢池子中位数；看空=跑输池子中位数"),
                 "t值": st.column_config.NumberColumn(format="%+.2f",

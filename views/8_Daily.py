@@ -124,6 +124,28 @@ def _bt_ref(groups: tuple[str, ...]) -> dict:
     return {n: vm[n] for n, g, _ in sbt.SIGNALS if g in groups and n in vm}
 
 
+def _reliable_signals(pf: dict) -> list[dict]:
+    """持仓当前触发的 A / B 级信号（信号成绩单评级），C 噪音 / D 反向不进日报以减少干扰。"""
+    res = sbt.load_result()
+    if not res:
+        return []
+    vm = sbt.verdict_map(res["summary"])
+    names = {p["yf_ticker"].upper(): p.get("display", p["yf_ticker"])
+             for a in pf.get("accounts", []) for p in a.get("positions", [])}
+    out = []
+    try:
+        cur = sbt.current_signals(list(names))
+    except Exception:
+        return []
+    for t, sigs in cur.items():
+        for sig in sorted(sigs):
+            v = vm.get(sig, {})
+            if v.get("评级", "")[:1] in ("A", "B"):
+                out.append({"ticker": t, "名称": names.get(t, t), "信号": sig, "评级": v["评级"],
+                            "预期": v.get("预期"), "历史20日超额%": v.get("20日平均超额%")})
+    return out
+
+
 def _momentum_block(pf: dict, acc: pd.DataFrame) -> dict:
     """量能：领涨/领跌（附绝对收益）+ 组合/大盘绝对参照 + 吸筹亮点/派发预警。"""
     mom = score_holdings(pf)
@@ -152,7 +174,8 @@ def _momentum_block(pf: dict, acc: pd.DataFrame) -> dict:
             "组合整体": overall, "大盘基准": bench,
             "领涨": leaders, "领跌": laggards,
             "吸筹亮点": accum_hi[:6], "派发预警": distrib[:6],
-            "信号历史检验": _bt_ref(("主力吸筹", "综合动量"))}
+            "信号历史检验": _bt_ref(("主力吸筹", "综合动量")),
+            "可靠信号(A/B级)": _reliable_signals(pf)}
 
 
 def _options_block(cache: dict) -> dict:

@@ -87,7 +87,8 @@ pg = st.navigation(
         "笔记 & 策略": [
             st.Page("views/4_Notes.py", title="交易策略笔记", icon="📓"),
         ],
-    }
+    },
+    expanded=True,        # 页面较多，默认全部展开（否则折叠成 "View N more"）
 )
 
 # 切换页面时关闭上一页未关的技术图表弹窗（core.stock_chart）
