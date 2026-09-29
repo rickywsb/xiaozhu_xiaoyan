@@ -185,7 +185,7 @@
           "display": "GOOGL",
           "yf_ticker": "GOOGL",
           "shares": 5.0,
-          "sector": "其他",
+          "sector": "配置",
           "native_currency": "USD",
           "note": "None"
         },
@@ -210,6 +210,14 @@
           "yf_ticker": "BE",
           "shares": 5.0,
           "sector": "其他",
+          "native_currency": "USD",
+          "note": "None"
+        },
+        {
+          "display": "AMAZ",
+          "yf_ticker": "AMAZ",
+          "shares": 53.0,
+          "sector": "配置",
           "native_currency": "USD",
           "note": "None"
         }
