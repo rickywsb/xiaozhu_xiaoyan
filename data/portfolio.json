@@ -24,7 +24,7 @@
         {
           "display": "LITE",
           "yf_ticker": "LITE",
-          "shares": 38.0,
+          "shares": 18.0,
           "sector": "光",
           "native_currency": "USD",
           "note": ""
@@ -56,7 +56,7 @@
         {
           "display": "MARVEL",
           "yf_ticker": "MRVL",
-          "shares": 61.0,
+          "shares": 42.0,
           "sector": "光",
           "native_currency": "USD",
           "note": "Marvell, 32+3+10"
@@ -96,7 +96,7 @@
         {
           "display": "NBIS",
           "yf_ticker": "NBIS",
-          "shares": 45.0,
+          "shares": 49.0,
           "sector": "其他",
           "native_currency": "USD",
           "note": "28+7+10"
@@ -128,7 +128,7 @@
         {
           "display": "Cash",
           "yf_ticker": "CASH",
-          "shares": 26061.0,
+          "shares": 43000.0,
           "sector": "现金",
           "native_currency": "USD",
           "note": ""
@@ -204,6 +204,14 @@
           "sector": "存",
           "native_currency": "USD",
           "note": "None"
+        },
+        {
+          "display": "BE",
+          "yf_ticker": "BE",
+          "shares": 5.0,
+          "sector": "其他",
+          "native_currency": "USD",
+          "note": "None"
         }
       ]
     }
@@ -219,18 +227,6 @@
       "type": "call",
       "strike": 155.0,
       "contract": "GLW270617C00155000",
-      "contracts": 1.0,
-      "sector": "光",
-      "manual_mark": null,
-      "note": "2027-06 到期"
-    },
-    {
-      "display": "Marvell 160 Call",
-      "underlying": "MRVL",
-      "expiry": "2027-06-17",
-      "type": "call",
-      "strike": 160.0,
-      "contract": "MRVL270617C00160000",
       "contracts": 1.0,
       "sector": "光",
       "manual_mark": null,
@@ -297,5 +293,5 @@
       "note": "None"
     }
   ],
-  "last_modified": "2026-09-26"
+  "last_modified": "2026-09-29"
 }
