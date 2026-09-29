@@ -68,32 +68,29 @@ st.set_page_config(
 # 子页面链接（如 /Portfolio），会绕过本文件回退成"文件名导航 + 窄布局"。
 pg = st.navigation(
     {
+        "": [
+            st.Page("views/home.py", title="驾驶舱", icon="🧭", url_path="home", default=True),
+        ],
         "投资组合": [
-            st.Page("views/8_Daily.py", title="每日日报", icon="📅"),
-            st.Page("views/10_Live.py", title="盘中看板", icon="📡"),
-            st.Page("views/1_Portfolio.py", title="持仓净值", icon="💼"),
-            st.Page("views/11_Risk.py", title="风险仪表盘", icon="🛡️"),
-            st.Page("views/5_Options_Review.py", title="期权复盘", icon="🎯"),
-            st.Page("views/12_OptionLab.py", title="期权情景", icon="🧮"),
-            st.Page("views/7_AI_Review.py", title="AI 持仓诊断", icon="🩺"),
+            st.Page("views/holdings.py", title="持仓", icon="💼", url_path="holdings"),
+            st.Page("views/options.py", title="期权", icon="🎯", url_path="options"),
+            st.Page("views/daily.py", title="日报", icon="📅", url_path="daily"),
         ],
-        "分析工具": [
-            st.Page("views/9_Sectors.py", title="板块雷达", icon="🧭"),
-            st.Page("views/13_Screener.py", title="选股器", icon="🔎"),
-            st.Page("views/2_Momentum.py", title="量能健康", icon="📊"),
-            st.Page("views/3_Watchlist.py", title="Watch List", icon="🔭"),
-            st.Page("views/6_News.py", title="行业资讯", icon="📰"),
-        ],
-        "笔记 & 策略": [
-            st.Page("views/4_Notes.py", title="交易策略笔记", icon="📓"),
+        "研究": [
+            st.Page("views/market.py", title="市场", icon="🗺️", url_path="market"),
+            st.Page("views/signals.py", title="个股信号", icon="📊", url_path="signals"),
+            st.Page("views/watch.py", title="关注与笔记", icon="🔭", url_path="watch"),
         ],
     },
-    expanded=True,        # 页面较多，默认全部展开（否则折叠成 "View N more"）
+    expanded=True,
 )
 
 # 切换页面时关闭上一页未关的技术图表弹窗（core.stock_chart）
 if st.session_state.get("_last_page") != pg.url_path:
     st.session_state.pop("_chart_open", None)
     st.session_state["_last_page"] = pg.url_path
+
+from core.ui import inject_css
+inject_css()
 
 pg.run()

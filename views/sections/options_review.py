@@ -1,4 +1,4 @@
-"""views/5_Options_Review.py — 期权复盘：涨跌归因 · 时间衰减 · 抄底信号
+"""views/sections/5_Options_Review.py — 期权复盘：涨跌归因 · 时间衰减 · 抄底信号
 
 回答三个问题：
   1. 现在（相较上一交易日）跌的是哪一块？标的跌 / 时间衰减 / IV 收缩？
@@ -13,14 +13,13 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import config
 from core.price_updater import load_cache
 from core import options_review as R
 from core.options import parse_occ
 from core import llm, ai_review
 
-st.title("🎯 期权复盘")
 st.caption("涨跌归因 · 时间衰减 · 抄底/进场信号 —— 仅辅助判断，非投资建议")
 
 cache = load_cache()

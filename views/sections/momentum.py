@@ -1,4 +1,4 @@
-"""views/2_Momentum.py — 量能健康报告 + 技术图表"""
+"""views/sections/2_Momentum.py — 量能健康报告 + 技术图表"""
 
 import json
 import sys
@@ -10,7 +10,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import config
 from core.stock_chart import clickable_table, click_hint
 from core.daily_momentum import PERIODS, score_holdings, fetch_histories, DEFAULT_DECAY, DEFAULT_WINDOW
@@ -214,7 +214,6 @@ def _accel_color(v):
 
 
 # ─── 页面 ─────────────────────────────────────────────────────────────────────
-st.title("📊 量能健康报告")
 click_hint()
 
 portfolio = _load_portfolio()

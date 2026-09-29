@@ -1,4 +1,4 @@
-"""views/3_Watchlist.py — 潜力 Watch List（Phase 4）"""
+"""views/sections/3_Watchlist.py — 潜力 Watch List（Phase 4）"""
 
 import json
 import sys
@@ -10,7 +10,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import config
 from core.stock_chart import clickable_table, click_hint
 from core.daily_momentum import (
@@ -130,7 +130,6 @@ def _accel_color(v):
 # ═══════════════════════════════════════════════════════════════════════════════
 # 页面主体
 # ═══════════════════════════════════════════════════════════════════════════════
-st.title("🔭 潜力 Watch List")
 click_hint()
 
 watchlist = _load_watchlist()

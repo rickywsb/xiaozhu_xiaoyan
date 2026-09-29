@@ -1,0 +1,30 @@
+# 全站主题（改版设计稿 · 视觉规范）
+[theme]
+base = "light"
+primaryColor = "#16181D"
+backgroundColor = "#F7F6F2"
+secondaryBackgroundColor = "#EFEDE7"
+textColor = "#16181D"
+linkColor = "#0E5E6F"
+borderColor = "#E2DFD7"
+dataframeBorderColor = "#E2DFD7"
+dataframeHeaderBackgroundColor = "#F3F1EC"
+showSidebarBorder = false
+baseRadius = "10px"
+greenColor = "#1F7A45"
+redColor = "#B3362A"
+orangeColor = "#C7711F"
+blueColor = "#1C4F7A"
+font = "Noto Sans SC:https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap"
+headingFont = "Noto Sans SC:https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap"
+codeFont = "IBM Plex Mono:https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+headingFontWeights = 700
+chartCategoricalColors = ["#1C4F7A", "#C7711F", "#1F7A45", "#7B4CC2", "#B3362A", "#0E5E6F", "#8A877E"]
+
+[theme.sidebar]
+backgroundColor = "#16181D"
+secondaryBackgroundColor = "#2B2E35"
+textColor = "#D9D6CE"
+borderColor = "#2B2E35"
+primaryColor = "#E8A84C"
+linkColor = "#E8A84C"

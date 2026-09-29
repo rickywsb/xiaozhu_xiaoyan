@@ -52,7 +52,10 @@ def load_panel(tickers: list[str], period: str = PERIOD, chunk: int = 100, progr
              for f in ("Close", "High", "Low", "Volume")}
     fx = dm._fx_per_usd({config.CURRENCY_MAP[t] for t in data if t in config.CURRENCY_MAP}, period)
     panel["close_usd"] = pd.DataFrame({t: dm._to_usd(d["Close"], t, fx) for t, d in data.items()}).sort_index()
-    return panel
+    # 只保留过半股票有数据的交易日：美股盘中时亚洲股票已收盘，否则最后一天只剩几只亚洲股票参与排名
+    close = panel["close"]
+    good = close.index[close.notna().sum(axis=1) >= 0.5 * close.shape[1]]
+    return {k: v.reindex(good) for k, v in panel.items()}
 
 
 def sector_strength(sector_keys: set[str], period: str = PERIOD) -> pd.DataFrame:
@@ -367,12 +370,16 @@ def latest(b: dict, holdings: set[str], watch: set[str], names: dict[str, str] |
         })
     df = pd.DataFrame(rows).sort_values("score", ascending=False).reset_index(drop=True)
     df.attrs["as_of"] = str(d.date())
+    ok = feat["valid"].loc[d]
+    df.attrs["breadth50"] = float(feat["above50"].loc[d][ok].mean())      # 市场宽度（供市场状态使用）
+    df.attrs["breadth200"] = float(feat["above200"].loc[d][ok].mean())
     return df
 
 
 def save_latest(df: pd.DataFrame, as_of: str) -> Path:
-    RATING_PATH.write_text(json.dumps({"as_of": as_of, "rows": json.loads(df.to_json(orient="records",
-                                                                                          force_ascii=False))},
+    meta = {k: v for k, v in df.attrs.items() if k != "as_of"}
+    RATING_PATH.write_text(json.dumps({"as_of": as_of, "meta": meta,
+                                       "rows": json.loads(df.to_json(orient="records", force_ascii=False))},
                                       ensure_ascii=False), encoding="utf-8")
     return RATING_PATH
 
@@ -382,7 +389,9 @@ def load_latest() -> tuple[pd.DataFrame, str | None]:
         return pd.DataFrame(), None
     try:
         d = json.loads(RATING_PATH.read_text(encoding="utf-8"))
-        return pd.DataFrame(d["rows"]), d.get("as_of")
+        df = pd.DataFrame(d["rows"])
+        df.attrs.update(d.get("meta") or {})
+        return df, d.get("as_of")
     except Exception:
         return pd.DataFrame(), None
 

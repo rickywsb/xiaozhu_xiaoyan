@@ -1,4 +1,4 @@
-"""views/12_OptionLab.py — 🧮 期权情景：价值曲线 / 情景矩阵 / 时间衰减 / 换月建议"""
+"""views/sections/12_OptionLab.py — 🧮 期权情景：价值曲线 / 情景矩阵 / 时间衰减 / 换月建议"""
 
 import json
 import sys
@@ -9,14 +9,13 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import config
 from core.stock_chart import clickable_table, click_hint
 from core import risk as R
 from core import option_scenarios as OS
 from core.price_updater import load_cache
 
-st.title("🧮 期权情景")
 click_hint()
 st.caption(
     "对持有的期权做「如果……会怎样」：标的涨跌、IV 变化、时间流逝对价值的影响。"

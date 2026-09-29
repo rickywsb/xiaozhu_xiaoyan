@@ -1,4 +1,4 @@
-"""views/4_Notes.py — 每周交易策略笔记"""
+"""views/sections/4_Notes.py — 每周交易策略笔记"""
 
 import json
 import sys
@@ -7,7 +7,7 @@ from pathlib import Path
 
 import streamlit as st
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import config
 from core.github_storage import sync_to_github
 
@@ -116,7 +116,6 @@ def _new_note_id() -> str:
 
 
 # ─── 页面 ─────────────────────────────────────────────────────────────────────
-st.title("📓 交易策略笔记")
 st.caption("记录每周市场观察、持仓动态与操作计划。保存后自动同步到 GitHub。")
 
 notes = _list_notes()

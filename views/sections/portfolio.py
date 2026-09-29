@@ -1,4 +1,4 @@
-"""views/1_Portfolio.py — 持仓净值页面（Phase 1 + Phase 2）"""
+"""views/sections/1_Portfolio.py — 持仓净值页面（Phase 1 + Phase 2）"""
 
 import json
 import sys
@@ -10,7 +10,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import config
 from core.stock_chart import clickable_table, click_hint
 from core.price_updater import load_cache, update_all_prices
@@ -240,7 +240,6 @@ def _build_view_df(portfolio: dict, cache: dict) -> tuple[pd.DataFrame, float]:
 
 # ─── 页面 ─────────────────────────────────────────────────────────────────────
 
-st.title("💼 持仓净值")
 click_hint()
 portfolio = _load_portfolio()
 cache     = load_cache()

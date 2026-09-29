@@ -1,4 +1,4 @@
-"""views/6_News.py — 半导体 / 存储 / 光通信 资讯聚合"""
+"""views/sections/6_News.py — 半导体 / 存储 / 光通信 资讯聚合"""
 
 import json
 import sys
@@ -7,12 +7,11 @@ from pathlib import Path
 
 import streamlit as st
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import config
 from core import news
 from core import llm, ai_review
 
-st.title("📰 行业资讯")
 st.caption(
     "聚合 Google News、行业垂直媒体（Blocks & Files / SEMI / EE Times）、"
     "TrendForce 公开新闻稿 与 yfinance 个股新闻。"

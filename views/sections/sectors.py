@@ -1,4 +1,4 @@
-"""views/9_Sectors.py — 🧭 板块雷达：全市场板块强弱 / 轮动 / 宽度 / 成分股下钻"""
+"""views/sections/9_Sectors.py — 🧭 板块雷达：全市场板块强弱 / 轮动 / 宽度 / 成分股下钻"""
 
 import json
 import sys
@@ -8,14 +8,13 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import config
 from core.stock_chart import clickable_table, click_hint
 from core import sectors as sc
 from core.daily_momentum import score_ticker_list
 from core import watchlist
 
-st.title("🧭 板块雷达")
 click_hint()
 st.caption(
     "11 个 SPDR 行业 + 9 个主题 ETF + 自定义篮子（光模块 / 存储 / AI电力，等权合成）。"

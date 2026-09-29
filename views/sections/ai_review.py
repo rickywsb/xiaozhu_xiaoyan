@@ -1,4 +1,4 @@
-"""views/7_AI_Review.py — 🩺 AI 持仓健康诊断
+"""views/sections/7_AI_Review.py — 🩺 AI 持仓健康诊断
 
 消费我们已算好的量能评分 + 主力吸筹信号 + 板块权重 + 近期资讯，交给 LLM 做
 一次组合级体检：集中度、赛道暴露、信号背离、风险与关注项。⚠️ AI 生成，非投资建议。
@@ -11,14 +11,13 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import config
 from core import llm, ai_review, news
 from core.daily_momentum import score_holdings
 from core import accumulation as accum
 from core.price_updater import load_cache
 
-st.title("🩺 AI 持仓健康诊断")
 st.caption(
     "综合 量能评分 · 主力吸筹（量价代理）· 板块权重 · 近期资讯，由 OpenAI 生成组合体检。"
     "⚠️ AI 生成、基于历史量价数据的辅助研究，**非投资建议**。"

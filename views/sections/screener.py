@@ -1,4 +1,4 @@
-"""views/13_Screener.py — 🔎 选股器：S&P 500 + Nasdaq-100 技术面筛选"""
+"""views/sections/13_Screener.py — 🔎 选股器：S&P 500 + Nasdaq-100 技术面筛选"""
 
 import json
 import sys
@@ -7,13 +7,12 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import config
 from core import screener as S
 from core import watchlist
 from core.stock_chart import clickable_table, click_hint
 
-st.title("🔎 选股器")
 st.caption(
     "股票池 = S&P 500 ∪ Nasdaq-100 ∪ 自定义篮子 ∪ 持仓/关注（排除杠杆/反向产品），约 540 只。"
     "**RS 评级**：IBD 式相对强度（3/6/9/12 月收益加权）在股票池内的百分位 1-99。"

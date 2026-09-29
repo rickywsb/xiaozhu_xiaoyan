@@ -1,4 +1,4 @@
-"""views/10_Live.py — 📡 盘中看板：当日涨跌 / 当日盈亏 / 关键价位预警 + Day 0 追踪"""
+"""views/sections/10_Live.py — 📡 盘中看板：当日涨跌 / 当日盈亏 / 关键价位预警 + Day 0 追踪"""
 
 import json
 import sys
@@ -11,7 +11,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import config
 from core.stock_chart import clickable_table, click_hint
 from core import tracker as tk
@@ -22,7 +22,6 @@ from core.github_storage import sync_to_github
 REFRESH_SECONDS = 15
 _GREEN, _RED = "#26a641", "#d73a4a"
 
-st.title("📡 盘中看板")
 click_hint()
 
 
@@ -76,12 +75,13 @@ uni = _universe()
 status = tk.us_market_status()
 live = status == "交易中"
 
-tab_live, tab_track = st.tabs(["⚡ 盘中", "📅 Day 0 追踪"])
+# 由入口页决定渲染哪一块：SECTION = "live"（盘中，驾驶舱）/ "day0"（Day 0 追踪，持仓）
+_SECTION = globals().get("SECTION", "live")
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 盘中
 # ═══════════════════════════════════════════════════════════════════════════════
-with tab_live:
+if _SECTION == "live":
 
     @st.fragment(run_every=REFRESH_SECONDS if live else None)
     def live_panel():
@@ -229,7 +229,7 @@ with tab_live:
 # ═══════════════════════════════════════════════════════════════════════════════
 # Day 0 追踪
 # ═══════════════════════════════════════════════════════════════════════════════
-with tab_track:
+if _SECTION == "day0":
     tr, changed = tk.ensure_tracker(uni)
     if tr is None:
         st.error("无法确定最近收盘日（SPY 行情获取失败），请稍后重试。")

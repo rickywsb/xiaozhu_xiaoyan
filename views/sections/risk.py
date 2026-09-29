@@ -1,4 +1,4 @@
-"""views/11_Risk.py — 🛡️ 风险仪表盘：敞口 / 集中度 / β / VaR / 相关性 / 压力测试"""
+"""views/sections/11_Risk.py — 🛡️ 风险仪表盘：敞口 / 集中度 / β / VaR / 相关性 / 压力测试"""
 
 import json
 import sys
@@ -9,7 +9,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import config
 from core.stock_chart import clickable_table, click_hint
 from core import risk as R
@@ -17,7 +17,6 @@ from core.price_updater import load_cache
 
 _GREEN, _RED, _BLUE, _GRAY = "#26a641", "#d73a4a", "#4C9BE8", "#8b949e"
 
-st.title("🛡️ 风险仪表盘")
 click_hint()
 st.caption(
     "期权按 **delta 等效敞口**（delta × 标的价 × 100 × 张数）并入标的与板块。"

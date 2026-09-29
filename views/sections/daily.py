@@ -1,4 +1,4 @@
-"""views/8_Daily.py — 📅 每日日报：一键更新价格 + AI 综合汇总
+"""views/sections/8_Daily.py — 📅 每日日报：一键更新价格 + AI 综合汇总
 
 一次点击完成：更新最新持仓价格 → 汇总 持仓结构 / 量能 / 期权 / 资讯 →
 交给 LLM 生成一份中文晨报。⚠️ AI 生成，非投资建议。
@@ -11,7 +11,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import config
 from core import llm, ai_review, news
 from core import options_review as R
@@ -24,7 +24,6 @@ from core.price_updater import load_cache, update_all_prices
 from core.github_storage import sync_to_github
 from core.value_history import append_value, HISTORY_PATH
 
-st.title("📅 每日日报")
 st.caption(
     "一键更新最新价格，AI 综合 **持仓结构 · 量能 · 期权 · 资讯**，生成当日晨报。"
     "⚠️ AI 生成、基于历史量价与公开资讯的辅助研究，**非投资建议**。"
@@ -322,6 +321,12 @@ if run_full or run_skip:
     except llm.LLMError as e:
         st.error(f"日报生成失败：{e}")
         st.stop()
+    try:   # 最新日报存一份，驾驶舱首页显示摘要
+        (config.DATA_DIR / "daily_report_latest.json").write_text(
+            json.dumps({"date": config.market_today().isoformat(), "report": rep}, ensure_ascii=False),
+            encoding="utf-8")
+    except Exception:
+        pass
 
     st.divider()
     m1, m2, m3 = st.columns(3)
