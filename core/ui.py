@@ -325,21 +325,27 @@ PILLS = {
 }
 VOL_COLORS = {"放量吸筹": "#1F6B3E", "放量派发": "#8E2E22", "缩量整理": "#1C4F7A"}
 
-_list_components: dict[int, object] = {}
+_components: dict[tuple[int, str], object] = {}
 
 
-def _list_comp():
-    """组件在 Streamlit 运行时（Runtime）的注册表里注册：每个运行时各注册一次（重启 / 测试会新建运行时）。"""
+def registered_component(name: str, **kw):
+    """
+    st.components.v2 组件在 Streamlit 运行时（Runtime）的注册表里注册：每个运行时各注册一次
+    （服务重启 / 测试会新建运行时，模块级缓存需要按运行时区分）。
+    """
     try:
         from streamlit.runtime import Runtime
         rid = id(Runtime.instance())
     except Exception:
         rid = 0
-    if rid not in _list_components:
-        _list_components[rid] = st.components.v2.component(
-            "pz_table", html='<div class="pz-wrap"><div class="pz-list"></div></div>',
-            css=_LIST_CSS, js=_LIST_JS)
-    return _list_components[rid]
+    if (rid, name) not in _components:
+        _components[(rid, name)] = st.components.v2.component(name, **kw)
+    return _components[(rid, name)]
+
+
+def _list_comp():
+    return registered_component("pz_table", html='<div class="pz-wrap"><div class="pz-list"></div></div>',
+                                css=_LIST_CSS, js=_LIST_JS)
 
 
 def _clean(v):

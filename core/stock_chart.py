@@ -19,7 +19,7 @@ import streamlit as st
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from core import daily_momentum as dm
-from core.technical_analysis import build_candlestick_chart, get_ohlcv
+from core.technical_analysis import get_ohlcv
 
 _OPEN = "_chart_open"          # session_state: {"owner": 表格 key, "ticker": ..., "name": ...}
 _GEN = "_chart_gen"            # session_state: {表格 key: 代数}，关闭弹窗后 +1 以重置行选中
@@ -191,52 +191,57 @@ def _chart_dialog(ticker: str, name: str | None = None) -> None:
     else:
         st.caption("该标的不在评分股票池（如杠杆产品），无综合评分。")
 
-    c1, c2 = st.columns([2, 3])
-    period = c1.radio("周期", list(_PERIODS), index=2, horizontal=True, key="dlg_period")
-    ind = c2.columns(5)
-    show_vol = ind[0].checkbox("成交量", True, key="dlg_vol")
-    show_rsi = ind[1].checkbox("RSI", True, key="dlg_rsi")
-    show_macd = ind[2].checkbox("MACD", False, key="dlg_macd")
-    show_boll = ind[3].checkbox("布林", False, key="dlg_boll")
-    show_lv = ind[4].checkbox("关键价位", True, key="dlg_lv", help="Fib 回撤位（紫）+ 筹码 POC/VAH/VAL")
-
-    ohlcv = _ohlcv(ticker, _PERIODS[period])
+    view = st.segmented_control(" ", ["📈 图表（含我们的信号）", "TradingView"], default="📈 图表（含我们的信号）",
+                                key="dlg_view", label_visibility="collapsed") or "📈 图表（含我们的信号）"
     ctx = _context(ticker)
-    if ohlcv.empty or len(ohlcv) < 5:
-        st.warning(f"暂无 {ticker} 的 K 线数据。")
-        return
 
-    fig = build_candlestick_chart(ohlcv, ticker, mas=[5, 20, 60], show_volume=show_vol,
-                                  show_rsi=show_rsi, show_macd=show_macd, show_bollinger=show_boll)
-    # A / B 级信号标记（近半年首次出现的位置）
-    show_sig = True
-    hist_sig = _signal_history(ticker) if show_sig else []
-    if hist_sig:
-        import plotly.graph_objects as go
-        dmap = {d.date().isoformat(): i for i, d in enumerate(ohlcv["Date"])}
-        for expect, sym, color, col, off in ((1, "triangle-up", "#1F7A45", "Low", 0.97), (-1, "triangle-down", "#B3362A", "High", 1.03)):
-            pts = [h for h in hist_sig if h["expect"] == expect and h["date"] in dmap]
-            if not pts:
-                continue
-            fig.add_trace(go.Scatter(
-                x=[ohlcv["Date"].iloc[dmap[h["date"]]] for h in pts],
-                y=[float(ohlcv[col].iloc[dmap[h["date"]]]) * off for h in pts],
-                mode="markers", marker=dict(symbol=sym, size=11, color=color, line=dict(width=1, color="white")),
-                name="A/B 看多信号" if expect > 0 else "A/B 看空信号",
-                text=[f'{h["date"]} {h["signal"]}（{h["grade"]}）' for h in pts],
-                hovertemplate="%{text}<extra></extra>"), row=1, col=1)
+    if view == "TradingView":
+        from core.lwchart import tv_embeddable, tv_symbol, tv_url, tv_widget
+        if tv_embeddable(ticker):
+            tv_widget(ticker)
+            st.caption(f"TradingView 官方图表（{tv_symbol(ticker)}），行情由 TradingView 提供，可用它的画线工具与上百种指标；"
+                       "它与本系统隔离，不显示我们的评分、信号与价位。")
+        else:
+            st.info(f"TradingView 的嵌入式图表不支持 {tv_symbol(ticker)}（港股、伦敦、韩国等受交易所授权限制，"
+                    "只能在 TradingView 官网查看）。「图表」标签页用我们自己的数据，可以正常显示。")
+            st.link_button(f"在 TradingView 官网打开 {tv_symbol(ticker)} ↗", tv_url(ticker))
+    else:
+        c1, c2 = st.columns([2, 3])
+        period = c1.radio("周期", list(_PERIODS), index=2, horizontal=True, key="dlg_period")
+        ind = c2.columns(5)
+        show_vol = ind[0].checkbox("成交量", True, key="dlg_vol")
+        show_rsi = ind[1].checkbox("RSI", True, key="dlg_rsi")
+        show_macd = ind[2].checkbox("MACD", False, key="dlg_macd")
+        show_boll = ind[3].checkbox("布林", False, key="dlg_boll")
+        show_lv = ind[4].checkbox("关键价位", True, key="dlg_lv", help="Fib 回撤位（紫）+ 筹码 POC/VAH/VAL")
 
-    if show_lv and ctx.get("levels"):
-        lo, hi = float(ohlcv["Low"].min()), float(ohlcv["High"].max())
-        pad = (hi - lo) * 0.15
-        for label, price, color in ctx["levels"]:
-            if lo - pad <= price <= hi + pad:        # 只画当前视窗附近的价位
-                fig.add_hline(y=price, line_dash="dot", line_width=1, line_color=color,
-                              annotation_text=f"{label} {price:,.2f}", annotation_position="top left",
-                              annotation_font_size=10, row=1, col=1)
-    st.plotly_chart(fig, width="stretch")
-    if hist_sig:
-        st.caption(f"▲ / ▼ = 近半年 A / B 级信号首次出现的位置（共 {len(hist_sig)} 次，悬停看信号名）。")
+        ohlcv = _ohlcv(ticker, _PERIODS[period])
+        if ohlcv.empty or len(ohlcv) < 5:
+            st.warning(f"暂无 {ticker} 的 K 线数据。")
+            return
+
+        # 关键价位：只画当前视窗附近的
+        levels = []
+        if show_lv and ctx.get("levels"):
+            lo, hi = float(ohlcv["Low"].min()), float(ohlcv["High"].max())
+            pad = (hi - lo) * 0.15
+            levels = [{"price": float(price), "color": color, "title": label}
+                      for label, price, color in ctx["levels"] if lo - pad <= price <= hi + pad]
+        # A / B 级信号箭头（近半年首次出现的位置）
+        hist_sig = _signal_history(ticker)
+        dates = {pd.Timestamp(d).strftime("%Y-%m-%d") for d in ohlcv["Date"]}
+        markers = [{"time": h["date"], "position": "belowBar" if h["expect"] > 0 else "aboveBar",
+                    "color": "#1F7A45" if h["expect"] > 0 else "#B3362A",
+                    "shape": "arrowUp" if h["expect"] > 0 else "arrowDown",
+                    "text": h["grade"]} for h in hist_sig if h["date"] in dates]
+        markers.sort(key=lambda m: m["time"])
+
+        from core.lwchart import lw_chart
+        lw_chart(ohlcv, key=f"dlg_lw_{ticker}_{period}", show_volume=show_vol, show_rsi=show_rsi,
+                 show_macd=show_macd, show_bollinger=show_boll, levels=levels, markers=markers)
+        st.caption("滚轮缩放、拖动平移、十字光标看数值。▲ / ▼ + 字母 = 近半年 A / B 级信号首次出现（信号名见下方列表）"
+                   + (f"（共 {len(markers)} 次）" if markers else "") + "；虚线 = Fib 回撤位 / 筹码 POC·VAH·VAL。"
+                   "图表由 TradingView Lightweight Charts™ 绘制。")
 
     if ctx:
         m = st.columns(4)
