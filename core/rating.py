@@ -10,6 +10,7 @@
   健康 H  EMA10/20/60 量能分（与量能健康页同口径）、距 20 日高点的回撤（以 ATR 计，越小越好）
 
 综合 = Σ 权重 × 成分，再取百分位 → 1–99。
+定位：**强势筛选**——历史检验显示超额集中在 ≥90 分（前 10%），90 分以下只作描述性排名，不代表好坏。
 验证：按分数分十组，看随后 20 个交易日相对股票池平均的超额是否单调；
       头尾组差用互不重叠的样本日（每 20 个交易日）计算 t 值；前后两段分别检验稳定性。
 """
@@ -30,7 +31,9 @@ import config
 from core import daily_momentum as dm
 
 PERIOD = "2y"
-WEIGHTS = {"趋势": 0.40, "量能": 0.25, "板块": 0.15, "健康": 0.20}
+# 四项等权：回测样本（约 22 个独立期）太少，不据此挑"最优"权重，避免过拟合；每周重跑验证后再议
+WEIGHTS = {"趋势": 0.25, "量能": 0.25, "板块": 0.25, "健康": 0.25}
+TOP_TIER = 90             # 强势筛选门槛：验证显示超额集中在前 10%
 HORIZON = 20
 RATING_PATH = config.DATA_DIR / "rating_latest.json"
 VALIDATION_PATH = config.DATA_DIR / "rating_validation.json"
@@ -243,6 +246,47 @@ def evaluate(score: pd.DataFrame, close_usd: pd.DataFrame, horizon: int = HORIZO
     }
 
 
+def evaluate_mask(mask: pd.DataFrame, close_usd: pd.DataFrame, horizon: int = HORIZON,
+                  step: int = 5, min_names: int = 200) -> dict:
+    """
+    把布尔矩阵（如 评分 ≥90、操作倾向=考虑减仓）当作信号：样本日内被选中股票随后 horizon 日
+    相对股票池平均的超额；非重叠样本 t 值；前后两段；胜率（跑赢同日中位数）。
+    """
+    px = close_usd.reindex(mask.index).ffill(limit=3)
+    fwd = px.shift(-horizon) / px - 1
+    ex = fwd.sub(fwd.mean(axis=1), axis=0)
+    med = fwd.sub(fwd.median(axis=1), axis=0)
+    vals, hits, counts = {}, [], []
+    for d in mask.index[::step]:
+        if ex.loc[d].notna().sum() < min_names:
+            continue
+        m = mask.loc[d].fillna(False).astype(bool) & ex.loc[d].notna()
+        if m.sum() < 5:
+            continue
+        vals[d] = float(ex.loc[d][m].mean())
+        hits.append(float((med.loc[d][m] > 0).mean()))
+        counts.append(int(m.sum()))
+    if len(vals) < 4:
+        return {}
+    ser = pd.Series(vals)
+    no = ser.iloc[::max(1, horizon // step)]
+    t = float(no.mean() / (no.std(ddof=1) / math.sqrt(len(no)))) if len(no) > 2 and no.std(ddof=1) > 0 else None
+    half = len(ser) // 2
+    return {"excess": float(ser.mean()), "t": t, "h1": float(ser.iloc[:half].mean()),
+            "h2": float(ser.iloc[half:].mean()), "hit": float(np.mean(hits)), "avg_n": float(np.mean(counts)),
+            "n_dates": len(ser), "start": str(ser.index[0].date()), "end": str(ser.index[-1].date())}
+
+
+def label_masks(score: pd.DataFrame, feat: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
+    """与 health_label（持仓规则）同口径的向量化版本，用于对全市场检验操作倾向标签。"""
+    s5 = score.shift(5)
+    a50, ema, d25 = feat["above50"], feat["ema_score"], feat["dist25"]
+    reduce_ = (score < 40) | ((a50 == 0) & (ema < 40))
+    watch_ = ~reduce_ & ((score < 60) | ((s5 - score) >= 10) | (a50 == 0) | (d25 >= 6))
+    hold_ = ~reduce_ & ~watch_ & score.notna()
+    return {"持有": hold_, "注意": watch_ & score.notna(), "考虑减仓": reduce_ & score.notna()}
+
+
 # ─── 主流程 ───────────────────────────────────────────────────────────────────
 
 def build(holdings: set[str], watch: set[str], period: str = PERIOD, progress=None) -> dict:
@@ -260,11 +304,35 @@ def build(holdings: set[str], watch: set[str], period: str = PERIOD, progress=No
 
 
 def validate(b: dict) -> dict:
-    """综合分与各成分的十分组检验。"""
-    out = {"综合": evaluate(b["score"], b["panel"]["close_usd"])}
+    """
+    验证报告：
+      deciles   综合分与各成分的十分组检验
+      top_tier  评分 ≥90 / ≥80 作为信号
+      labels    操作倾向标签（对全市场套用持仓规则）
+    """
+    cu = b["panel"]["close_usd"]
+    deciles = {"综合": evaluate(b["score"], cu)}
     for k, df in b["comp"].items():
-        out[k] = evaluate(df.rank(axis=1, pct=True) * 98 + 1, b["panel"]["close_usd"])
-    return out
+        deciles[k] = evaluate(df.rank(axis=1, pct=True) * 98 + 1, cu)
+    top = {f"≥{th}": evaluate_mask(b["score"] >= th, cu) for th in (TOP_TIER, 80)}
+    labels = {k: evaluate_mask(m, cu) for k, m in label_masks(b["score"], b["feat"]).items()}
+    return {"weights": WEIGHTS, "horizon": HORIZON, "deciles": deciles, "top_tier": top, "labels": labels,
+            "n_tickers": int(b["score"].shape[1])}
+
+
+def save_validation(v: dict, run_date: str) -> Path:
+    VALIDATION_PATH.write_text(json.dumps({"run_date": run_date, **v}, ensure_ascii=False, indent=1),
+                               encoding="utf-8")
+    return VALIDATION_PATH
+
+
+def load_validation() -> dict | None:
+    if not VALIDATION_PATH.exists():
+        return None
+    try:
+        return json.loads(VALIDATION_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return None
 
 
 def latest(b: dict, holdings: set[str], watch: set[str], names: dict[str, str] | None = None) -> pd.DataFrame:
@@ -317,3 +385,40 @@ def load_latest() -> tuple[pd.DataFrame, str | None]:
         return pd.DataFrame(d["rows"]), d.get("as_of")
     except Exception:
         return pd.DataFrame(), None
+
+
+def _portfolio_sets() -> tuple[set[str], set[str], dict[str, str]]:
+    from core import watchlist as wl
+    pf = json.loads(config.PORTFOLIO_PATH.read_text(encoding="utf-8"))
+    names = {p["yf_ticker"].upper(): p.get("display", p["yf_ticker"])
+             for a in pf.get("accounts", []) for p in a.get("positions", [])
+             if p["yf_ticker"].upper() != config.CASH_TICKER}
+    held = set(names)
+    watch = {t for t in wl.load() if t != config.CASH_TICKER} - held
+    return held, watch, names
+
+
+def get_ratings(force: bool = False, progress=None) -> tuple[pd.DataFrame, str | None]:
+    """
+    最新全市场评分表：data/rating_latest.json 已是最近收盘日的就直接用；否则重新计算（约 1 分钟），
+    保存并同步 GitHub。持仓 / 关注分组按当前持仓与关注列表实时刷新。
+    """
+    from core.tracker import last_close_date
+    held, watch, names = _portfolio_sets()
+    df, as_of = load_latest()
+    if not force and not df.empty and as_of and as_of >= (last_close_date() or ""):
+        df["group"] = ["持仓" if t in held else ("关注" if t in watch else "") for t in df["ticker"]]
+        for i, t in enumerate(df["ticker"]):
+            if t in names:
+                df.at[i, "name"] = names[t]
+        return df, as_of
+    b = build(held, watch, progress=progress)
+    df = latest(b, held, watch, names)
+    as_of = df.attrs.get("as_of")
+    try:
+        from core.github_storage import sync_to_github
+        path = save_latest(df, as_of)
+        sync_to_github(path, "data/rating_latest.json", "chore: update ratings")
+    except Exception:
+        pass
+    return df, as_of
