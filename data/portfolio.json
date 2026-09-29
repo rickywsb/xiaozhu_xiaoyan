@@ -214,8 +214,8 @@
           "note": "None"
         },
         {
-          "display": "AMAZ",
-          "yf_ticker": "AMAZ",
+          "display": "AMAZON",
+          "yf_ticker": "AMZN",
           "shares": 53.0,
           "sector": "配置",
           "native_currency": "USD",
