@@ -366,6 +366,7 @@ def latest(b: dict, holdings: set[str], watch: set[str], names: dict[str, str] |
             "volume_state": volume_state(g("vr"), g("ret1"), g("ud50"), g("vol_sig20"), g("dist25"),
                                          float(vr5[t]) if pd.notna(vr5.get(t)) else None),
             "vr": g("vr"), "ret1": g("ret1"), "ema_score": g("ema_score"),
+            "above50": g("above50"), "dist25": g("dist25"),      # 保存以便按当前持仓 / 关注重算操作倾向
             "group": "持仓" if held else ("关注" if t in watch else ""),
         })
     df = pd.DataFrame(rows).sort_values("score", ascending=False).reset_index(drop=True)
@@ -417,6 +418,11 @@ def get_ratings(force: bool = False, progress=None) -> tuple[pd.DataFrame, str |
     df, as_of = load_latest()
     if not force and not df.empty and as_of and as_of >= (last_close_date() or ""):
         df["group"] = ["持仓" if t in held else ("关注" if t in watch else "") for t in df["ticker"]]
+        if {"above50", "dist25"} <= set(df.columns):
+            # 持仓 / 关注可能在评分计算之后变动：按当前归属重算操作倾向（持仓用 持有/注意/考虑减仓）
+            num = lambda v: None if v is None or v != v else float(v)
+            df["action"] = [health_label(r.score, num(r.score_5d), num(r.above50), num(r.ema_score), num(r.dist25),
+                                         held=r.ticker in held) for r in df.itertuples()]
         for i, t in enumerate(df["ticker"]):
             if t in names:
                 df.at[i, "name"] = names[t]

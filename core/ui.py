@@ -169,3 +169,156 @@ def stock_table(df, key: str, height: int | None = None):
     return clickable_table(sty, tickers=list(df["ticker"]), names=list(nm),
                            key=key, column_config=cfg, hide_index=True, width="stretch",
                            height=height or min(760, 80 + len(df) * 35))
+
+
+# ─── 设计稿样式的股票列表（st.components.v2：自定义 HTML + 点击回传 Python）────────
+_LIST_CSS = """
+.pz-wrap { overflow-x: auto; font-family: "Noto Sans SC", sans-serif; color: #16181D; }
+.pz-list { min-width: 900px; background: #FFFFFF; border: 1px solid #E2DFD7; border-radius: 16px; padding: 6px 14px 10px; }
+.pz-row { display: grid; grid-template-columns: minmax(130px,1.3fr) 100px 62px 96px 92px 92px 76px minmax(140px,1.7fr);
+          gap: 0 12px; align-items: center; padding: 8px 8px; border-bottom: 1px solid #F0EEE8; font-size: 14px; }
+.pz-row.pz-body { cursor: pointer; border-radius: 10px; }
+.pz-row.pz-body:hover { background: #F7F6F2; }
+.pz-row.pz-body:last-child { border-bottom: none; }
+.pz-head { font-size: 12px; color: #5E5B53; padding: 10px 8px 8px; border-bottom: 1px solid #E2DFD7; }
+.pz-head span.sortable { cursor: pointer; user-select: none; }
+.pz-head span.sortable:hover { color: #16181D; }
+.pz-head span.active { color: #16181D; font-weight: 600; }
+.pz-t { font-weight: 700; }
+.pz-n { font-size: 12px; color: #5E5B53; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pz-num { font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; }
+.pz-up { color: #1F7A45; } .pz-dn { color: #B3362A; } .pz-mute { color: #8A877E; }
+.pz-sub { font-size: 12px; margin-top: 2px; }
+.pz-score { display: inline-block; min-width: 38px; text-align: center; padding: 3px 8px; border-radius: 8px;
+            color: #FFFFFF; font-weight: 600; font-size: 14px; }
+.pz-d5 { font-size: 12px; margin-left: 6px; }
+.pz-pill { justify-self: start; font-size: 13px; font-weight: 600; padding: 4px 10px; border-radius: 999px; white-space: nowrap; }
+.pz-vr-hot { font-weight: 700; color: #8A4B0A; background: #FBEFD9; padding: 2px 6px; border-radius: 6px; }
+.pz-vol { font-size: 12px; }
+.pz-sig { font-size: 12px; color: #3B3A36; line-height: 1.5; }
+.pz-empty { padding: 18px 8px; color: #8A877E; font-size: 13px; }
+"""
+
+_LIST_JS = """
+export default function(component) {
+  const { data, setTriggerValue, parentElement } = component;
+  const root = parentElement.querySelector('.pz-list');
+  if (!root || !data) return;
+  const rows = data.rows || [];
+  const SORTABLE = { chg: '当日', vr: '量比', score: '评分' };
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const scoreBg = (v) => v >= 90 ? '#155E36' : v >= 70 ? '#2F8A57' : v >= 50 ? '#8A877E' : v >= 30 ? '#C7711F' : '#B3362A';
+  const ACTION = { '持有':['#DDF0E4','#1F6B3E'], '可关注':['#DDF0E4','#1F6B3E'], '注意':['#FBEFD9','#8A4B0A'],
+                   '等待':['#ECEAE4','#5E5B53'], '考虑减仓':['#F7E0DC','#8E2E22'], '回避':['#F7E0DC','#8E2E22'] };
+  const VOL = { '放量吸筹':'#1F6B3E', '放量派发':'#8E2E22', '缩量整理':'#1C4F7A' };
+  const spark = (vals) => {
+    if (!vals || vals.length < 2) return '';
+    const w = 90, h = 26, mn = Math.min(...vals), mx = Math.max(...vals);
+    const pts = vals.map((v, i) => `${(i * w / (vals.length - 1)).toFixed(1)},${(h - 3 - (mx === mn ? 0.5 : (v - mn) / (mx - mn)) * (h - 6)).toFixed(1)}`).join(' ');
+    const col = vals[vals.length - 1] >= vals[0] ? '#1F7A45' : '#B3362A';
+    return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><polyline points="${pts}" fill="none" stroke="${col}" stroke-width="1.6" stroke-linejoin="round"/></svg>`;
+  };
+  let key = root.dataset.sortKey || data.sort || 'score';
+  let desc = root.dataset.desc !== '0';
+
+  const render = () => {
+    const sorted = [...rows].sort((a, b) => {
+      const x = a[key], y = b[key];
+      if (x == null && y == null) return 0; if (x == null) return 1; if (y == null) return -1;
+      return desc ? y - x : x - y;
+    });
+    const arrow = (k) => k === key ? (desc ? ' ↓' : ' ↑') : '';
+    const head = `<div class="pz-row pz-head">
+      <span>股票</span>
+      <span class="sortable ${key==='chg'?'active':''}" data-sort="chg">价格 · 当日${arrow('chg')}</span>
+      <span class="sortable ${key==='vr'?'active':''}" data-sort="vr">量比${arrow('vr')}</span>
+      <span class="sortable ${key==='score'?'active':''}" data-sort="score">评分${arrow('score')}</span>
+      <span>20 日走势</span><span>操作倾向</span><span>量能</span><span>可靠信号</span></div>`;
+    const body = sorted.map(r => {
+      const chgCls = r.chg == null ? 'pz-mute' : (r.chg > 0 ? 'pz-up' : (r.chg < 0 ? 'pz-dn' : ''));
+      const chg = r.chg == null ? '—' : `${r.chg > 0 ? '+' : ''}${r.chg.toFixed(2)}%`;
+      const vr = r.vr == null ? '<span class="pz-mute">—</span>'
+               : `<span class="pz-num ${r.vr >= 2 ? 'pz-vr-hot' : ''}">${r.vr.toFixed(2)}×</span>`;
+      const score = r.score == null ? '<span class="pz-mute">—</span>'
+               : `<span class="pz-num pz-score" style="background:${scoreBg(r.score)}">${r.score}</span>` +
+                 (r.d5 == null ? '' : `<span class="pz-num pz-d5 ${r.d5 > 0 ? 'pz-up' : (r.d5 < 0 ? 'pz-dn' : 'pz-mute')}">${r.d5 > 0 ? '↑' : (r.d5 < 0 ? '↓' : '→')}${Math.abs(r.d5)}</span>`);
+      const a = ACTION[r.action];
+      const action = a ? `<span class="pz-pill" style="background:${a[0]};color:${a[1]}">${esc(r.action)}</span>`
+                       : `<span class="pz-mute" style="font-size:12px">${esc(r.action || '')}</span>`;
+      const vol = r.volume_state ? `<span class="pz-vol" style="color:${VOL[r.volume_state] || '#5E5B53'};${VOL[r.volume_state] ? 'font-weight:600' : ''}">${esc(r.volume_state)}</span>` : '';
+      return `<div class="pz-row pz-body" data-t="${esc(r.ticker)}" title="点击查看 ${esc(r.ticker)} 的个股详情">
+        <div><div class="pz-t">${esc(r.ticker)}</div><div class="pz-n">${esc(r.sub || '')}</div></div>
+        <div><div class="pz-num">${esc(r.price_txt || '—')}</div><div class="pz-num pz-sub ${chgCls}">${chg}</div></div>
+        <div>${vr}</div><div>${score}</div><div>${spark(r.spark)}</div><div>${action}</div><div>${vol}</div>
+        <div class="pz-sig">${esc(r.signals || '')}</div></div>`;
+    }).join('');
+    root.innerHTML = head + (body || '<div class="pz-empty">暂无数据</div>');
+    root.querySelectorAll('.pz-body').forEach(el => { el.onclick = () => setTriggerValue('clicked', el.dataset.t); });
+    root.querySelectorAll('[data-sort]').forEach(el => {
+      el.onclick = () => {
+        const k = el.dataset.sort;
+        if (k === key) { desc = !desc; } else { key = k; desc = true; }
+        root.dataset.sortKey = key; root.dataset.desc = desc ? '1' : '0';
+        render();
+      };
+    });
+  };
+  render();
+}
+"""
+
+_list_component = None
+
+
+def _list_comp():
+    global _list_component
+    if _list_component is None:
+        _list_component = st.components.v2.component(
+            "pz_stock_list", html='<div class="pz-wrap"><div class="pz-list"></div></div>',
+            css=_LIST_CSS, js=_LIST_JS)
+    return _list_component
+
+
+def stock_list(df, key: str, sectors: dict | None = None, sort: str = "score") -> None:
+    """
+    设计稿样式的股票列表（自定义 HTML）：点击一行打开个股详情弹窗，点击「价格·当日 / 量比 / 评分」表头排序。
+    df 列同 stock_table：ticker, name, price, chg, vr, score, d5, spark, action, volume_state, signals。
+    sectors：{ticker: 板块}，显示在名称后。
+    """
+    import math
+    from core import stock_chart as SC
+
+    sectors = sectors or {}
+
+    def num(x):
+        try:
+            x = float(x)
+        except (TypeError, ValueError):
+            return None
+        return None if math.isnan(x) else x
+
+    rows, names = [], {}
+    for r in df.to_dict("records"):
+        t = r["ticker"]
+        nm = r.get("name") or t
+        names[t] = nm
+        sub = " · ".join(x for x in [nm if str(nm).upper() != t else "", sectors.get(t, "")] if x)
+        price, chg, score, d5 = num(r.get("price")), num(r.get("chg")), num(r.get("score")), num(r.get("d5"))
+        rows.append({
+            "ticker": t, "sub": sub,
+            "price_txt": f"{price:,.2f}" if price is not None else None,
+            "chg": round(chg * 100, 2) if chg is not None else None,
+            "vr": round(num(r.get("vr")), 2) if num(r.get("vr")) is not None else None,
+            "score": int(score) if score is not None else None,
+            "d5": int(d5) if d5 is not None else None,
+            "spark": [x for x in (r.get("spark") or []) if x == x],
+            "action": r.get("action") or "", "volume_state": r.get("volume_state") or "",
+            "signals": r.get("signals") or "",
+        })
+    res = _list_comp()(data={"rows": rows, "sort": sort}, key=key, on_clicked_change=lambda: None)
+    clicked = getattr(res, "clicked", None)
+    if clicked:
+        st.session_state[SC._OPEN] = {"owner": key, "ticker": clicked, "name": names.get(clicked)}
+    opened = st.session_state.get(SC._OPEN)
+    if opened and opened["owner"] == key:
+        SC._chart_dialog(opened["ticker"], opened.get("name"))

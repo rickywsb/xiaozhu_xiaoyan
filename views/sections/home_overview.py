@@ -18,7 +18,7 @@ from core import tracker as tk
 from core import risk as RK
 from core.enrich import enrich
 from core.price_updater import load_cache
-from core.ui import stock_table
+from core.ui import stock_list
 
 
 # ─── 数据（缓存）──────────────────────────────────────────────────────────────
@@ -174,5 +174,6 @@ st.caption(
     + f"；{RT.TOP_TIER} 分以下只作排名参考。操作倾向历史区分度弱，仅作状态提示。点击任意一行打开个股详情。")
 tbl = _holdings_table(tuple(held_t), ratings.to_json(), quotes.to_json(), json.dumps(names))
 tbl = tbl.sort_values("score", ascending=False, na_position="last").reset_index(drop=True)
-stock_table(tbl, key="home_hold", height=min(900, 80 + len(tbl) * 35))
+_sectors = {p["yf_ticker"].upper(): p.get("sector", "") for a in pf.get("accounts", []) for p in a.get("positions", [])}
+stock_list(tbl, key="home_hold", sectors=_sectors)
 
