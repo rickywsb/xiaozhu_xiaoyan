@@ -173,29 +173,36 @@ def stock_table(df, key: str, height: int | None = None):
 
 # ─── 设计稿样式的股票列表（st.components.v2：自定义 HTML + 点击回传 Python）────────
 _LIST_CSS = """
-.pz-wrap { overflow-x: auto; font-family: "Noto Sans SC", sans-serif; color: #16181D; }
-.pz-list { min-width: 900px; background: #FFFFFF; border: 1px solid #E2DFD7; border-radius: 16px; padding: 6px 14px 10px; }
-.pz-row { display: grid; grid-template-columns: minmax(130px,1.3fr) 100px 62px 96px 92px 92px 76px minmax(140px,1.7fr);
-          gap: 0 12px; align-items: center; padding: 8px 8px; border-bottom: 1px solid #F0EEE8; font-size: 14px; }
-.pz-row.pz-body { cursor: pointer; border-radius: 10px; }
+.pz-wrap { overflow-x: auto; font-family: "Noto Sans SC", sans-serif; color: #16181D; padding-bottom: 4px; }
+.pz-wrap::-webkit-scrollbar { height: 8px; }
+.pz-wrap::-webkit-scrollbar-thumb { background: #D5D1C7; border-radius: 4px; }
+.pz-wrap::-webkit-scrollbar-track { background: transparent; }
+.pz-list { background: #FFFFFF; border: 1px solid #E2DFD7; border-radius: 16px; padding: 6px 14px 10px; }
+.pz-row { display: grid; gap: 0 12px; align-items: center; padding: 8px 8px; border-bottom: 1px solid #F0EEE8; font-size: 14px; }
+.pz-row.pz-body { border-radius: 10px; }
+.pz-row.pz-click { cursor: pointer; }
 .pz-row.pz-body:hover { background: #F7F6F2; }
 .pz-row.pz-body:last-child { border-bottom: none; }
 .pz-head { font-size: 12px; color: #5E5B53; padding: 10px 8px 8px; border-bottom: 1px solid #E2DFD7; }
 .pz-head span.sortable { cursor: pointer; user-select: none; }
 .pz-head span.sortable:hover { color: #16181D; }
 .pz-head span.active { color: #16181D; font-weight: 600; }
+.pz-r { text-align: right; justify-self: end; }
 .pz-t { font-weight: 700; }
 .pz-n { font-size: 12px; color: #5E5B53; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pz-num { font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; }
+.pz-num { font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .pz-up { color: #1F7A45; } .pz-dn { color: #B3362A; } .pz-mute { color: #8A877E; }
 .pz-sub { font-size: 12px; margin-top: 2px; }
 .pz-score { display: inline-block; min-width: 38px; text-align: center; padding: 3px 8px; border-radius: 8px;
             color: #FFFFFF; font-weight: 600; font-size: 14px; }
 .pz-d5 { font-size: 12px; margin-left: 6px; }
-.pz-pill { justify-self: start; font-size: 13px; font-weight: 600; padding: 4px 10px; border-radius: 999px; white-space: nowrap; }
-.pz-vr-hot { font-weight: 700; color: #8A4B0A; background: #FBEFD9; padding: 2px 6px; border-radius: 6px; }
-.pz-vol { font-size: 12px; }
-.pz-sig { font-size: 12px; color: #3B3A36; line-height: 1.5; }
+.pz-pill { justify-self: start; font-size: 12.5px; font-weight: 600; padding: 3px 10px; border-radius: 999px; white-space: nowrap; }
+.pz-hot { font-weight: 700; color: #8A4B0A; background: #FBEFD9; padding: 2px 6px; border-radius: 6px; }
+.pz-text { font-size: 13px; color: #3B3A36; line-height: 1.45; }
+.pz-small { font-size: 12px; color: #3B3A36; line-height: 1.5; }
+.pz-bar { display: flex; align-items: center; gap: 8px; }
+.pz-bar i { display: block; height: 6px; border-radius: 3px; background: #F0EEE8; flex-grow: 1; position: relative; min-width: 40px; }
+.pz-bar i b { position: absolute; left: 0; top: 0; height: 6px; border-radius: 3px; }
 .pz-empty { padding: 18px 8px; color: #8A877E; font-size: 13px; }
 """
 
@@ -204,13 +211,20 @@ export default function(component) {
   const { data, setTriggerValue, parentElement } = component;
   const root = parentElement.querySelector('.pz-list');
   if (!root || !data) return;
-  const rows = data.rows || [];
-  const SORTABLE = { chg: '当日', vr: '量比', score: '评分' };
+  const rows = data.rows || [], cols = data.columns || [];
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const scoreBg = (v) => v >= 90 ? '#155E36' : v >= 70 ? '#2F8A57' : v >= 50 ? '#8A877E' : v >= 30 ? '#C7711F' : '#B3362A';
-  const ACTION = { '持有':['#DDF0E4','#1F6B3E'], '可关注':['#DDF0E4','#1F6B3E'], '注意':['#FBEFD9','#8A4B0A'],
-                   '等待':['#ECEAE4','#5E5B53'], '考虑减仓':['#F7E0DC','#8E2E22'], '回避':['#F7E0DC','#8E2E22'] };
-  const VOL = { '放量吸筹':'#1F6B3E', '放量派发':'#8E2E22', '缩量整理':'#1C4F7A' };
+  const PILL = data.pills || {};
+  const sgn = (v, cls) => cls ? (v > 0 ? 'pz-up' : (v < 0 ? 'pz-dn' : '')) : '';
+  const fmtNum = (v, c) => {
+    if (v == null) return '<span class="pz-mute">—</span>';
+    const d = c.decimals ?? 2;
+    let t = Math.abs(v) >= 1000 && c.group !== false ? v.toLocaleString('en-US', {minimumFractionDigits: d, maximumFractionDigits: d}) : v.toFixed(d);
+    if (c.sign && v > 0) t = '+' + t;
+    t = (c.prefix || '') + t + (c.suffix || '');
+    const hot = c.hot != null && v >= c.hot ? ' pz-hot' : '';
+    return `<span class="pz-num ${sgn(v, c.color)}${hot}">${t}</span>`;
+  };
   const spark = (vals) => {
     if (!vals || vals.length < 2) return '';
     const w = 90, h = 26, mn = Math.min(...vals), mx = Math.max(...vals);
@@ -218,42 +232,66 @@ export default function(component) {
     const col = vals[vals.length - 1] >= vals[0] ? '#1F7A45' : '#B3362A';
     return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><polyline points="${pts}" fill="none" stroke="${col}" stroke-width="1.6" stroke-linejoin="round"/></svg>`;
   };
-  let key = root.dataset.sortKey || data.sort || 'score';
-  let desc = root.dataset.desc !== '0';
-
+  const cell = (r, c) => {
+    const v = r[c.key];
+    switch (c.kind) {
+      case 'stock':
+        return `<div><div class="pz-t">${esc(r.ticker_label ?? r.ticker ?? v)}</div><div class="pz-n">${esc(r.sub || '')}</div></div>`;
+      case 'price': {
+        const ch = r[c.chg];
+        const cls = ch == null ? 'pz-mute' : sgn(ch, true);
+        const t = ch == null ? '—' : `${ch > 0 ? '+' : ''}${ch.toFixed(2)}%`;
+        return `<div><div class="pz-num">${esc(r[c.key] ?? '—')}</div><div class="pz-num pz-sub ${cls}">${t}</div></div>`;
+      }
+      case 'num': return fmtNum(v, c);
+      case 'score': {
+        if (v == null) return '<span class="pz-mute">—</span>';
+        const d = c.delta ? r[c.delta] : null;
+        return `<span class="pz-num pz-score" style="background:${scoreBg(v)}">${v}</span>` +
+          (d == null ? '' : `<span class="pz-num pz-d5 ${d > 0 ? 'pz-up' : (d < 0 ? 'pz-dn' : 'pz-mute')}">${d > 0 ? '↑' : (d < 0 ? '↓' : '→')}${Math.abs(d)}</span>`);
+      }
+      case 'spark': return spark(v);
+      case 'pill': {
+        if (!v) return '';
+        const p = PILL[v];
+        return p ? `<span class="pz-pill" style="background:${p[0]};color:${p[1]}">${esc(v)}</span>`
+                 : `<span class="pz-small pz-mute">${esc(v)}</span>`;
+      }
+      case 'bar': {
+        if (v == null) return '<span class="pz-mute">—</span>';
+        const mx = c.max ?? 100, w = Math.max(0, Math.min(100, v / mx * 100));
+        const col = c.barColor || (v / mx >= 0.6 ? '#2F8A57' : v / mx >= 0.3 ? '#C9A227' : '#C7711F');
+        return `<div class="pz-bar"><span class="pz-num" style="min-width:${c.labelW || 34}px">${(c.decimals ?? 0) ? v.toFixed(c.decimals) : Math.round(v)}${c.suffix || ''}</span><i><b style="width:${w}%;background:${col}"></b></i></div>`;
+      }
+      case 'small': return `<span class="pz-small">${esc(v ?? '')}</span>`;
+      default: {
+        const colr = c.colors && c.colors[v] ? `color:${c.colors[v]};font-weight:600` : '';
+        return `<span class="pz-text" style="${colr}">${esc(v ?? '')}</span>`;
+      }
+    }
+  };
+  const tmpl = cols.map(c => c.width || 'minmax(80px,1fr)').join(' ');
+  root.style.minWidth = (data.minWidth || 900) + 'px';
+  let key = root.dataset.sortKey ?? (data.sort || '');
+  let desc = root.dataset.desc ? root.dataset.desc !== '0' : (data.desc !== false);
+  const sortVal = (r, k) => { const c = cols.find(x => x.key === k); const sk = c && c.sortKey ? c.sortKey : k; return r[sk]; };
   const render = () => {
-    const sorted = [...rows].sort((a, b) => {
-      const x = a[key], y = b[key];
+    const sorted = key ? [...rows].sort((a, b) => {
+      const x = sortVal(a, key), y = sortVal(b, key);
       if (x == null && y == null) return 0; if (x == null) return 1; if (y == null) return -1;
+      if (typeof x === 'string') return desc ? String(y).localeCompare(x) : String(x).localeCompare(y);
       return desc ? y - x : x - y;
-    });
+    }) : rows;
     const arrow = (k) => k === key ? (desc ? ' ↓' : ' ↑') : '';
-    const head = `<div class="pz-row pz-head">
-      <span>股票</span>
-      <span class="sortable ${key==='chg'?'active':''}" data-sort="chg">价格 · 当日${arrow('chg')}</span>
-      <span class="sortable ${key==='vr'?'active':''}" data-sort="vr">量比${arrow('vr')}</span>
-      <span class="sortable ${key==='score'?'active':''}" data-sort="score">评分${arrow('score')}</span>
-      <span>20 日走势</span><span>操作倾向</span><span>量能</span><span>可靠信号</span></div>`;
+    const head = `<div class="pz-row pz-head" style="grid-template-columns:${tmpl}">` + cols.map(c =>
+      `<span class="${c.sortable ? 'sortable' : ''} ${c.key === key ? 'active' : ''} ${c.align === 'right' ? 'pz-r' : ''}" ${c.sortable ? `data-sort="${c.key}"` : ''}>${esc(c.label)}${arrow(c.key)}</span>`).join('') + '</div>';
     const body = sorted.map(r => {
-      const chgCls = r.chg == null ? 'pz-mute' : (r.chg > 0 ? 'pz-up' : (r.chg < 0 ? 'pz-dn' : ''));
-      const chg = r.chg == null ? '—' : `${r.chg > 0 ? '+' : ''}${r.chg.toFixed(2)}%`;
-      const vr = r.vr == null ? '<span class="pz-mute">—</span>'
-               : `<span class="pz-num ${r.vr >= 2 ? 'pz-vr-hot' : ''}">${r.vr.toFixed(2)}×</span>`;
-      const score = r.score == null ? '<span class="pz-mute">—</span>'
-               : `<span class="pz-num pz-score" style="background:${scoreBg(r.score)}">${r.score}</span>` +
-                 (r.d5 == null ? '' : `<span class="pz-num pz-d5 ${r.d5 > 0 ? 'pz-up' : (r.d5 < 0 ? 'pz-dn' : 'pz-mute')}">${r.d5 > 0 ? '↑' : (r.d5 < 0 ? '↓' : '→')}${Math.abs(r.d5)}</span>`);
-      const a = ACTION[r.action];
-      const action = a ? `<span class="pz-pill" style="background:${a[0]};color:${a[1]}">${esc(r.action)}</span>`
-                       : `<span class="pz-mute" style="font-size:12px">${esc(r.action || '')}</span>`;
-      const vol = r.volume_state ? `<span class="pz-vol" style="color:${VOL[r.volume_state] || '#5E5B53'};${VOL[r.volume_state] ? 'font-weight:600' : ''}">${esc(r.volume_state)}</span>` : '';
-      return `<div class="pz-row pz-body" data-t="${esc(r.ticker)}" title="点击查看 ${esc(r.ticker)} 的个股详情">
-        <div><div class="pz-t">${esc(r.ticker)}</div><div class="pz-n">${esc(r.sub || '')}</div></div>
-        <div><div class="pz-num">${esc(r.price_txt || '—')}</div><div class="pz-num pz-sub ${chgCls}">${chg}</div></div>
-        <div>${vr}</div><div>${score}</div><div>${spark(r.spark)}</div><div>${action}</div><div>${vol}</div>
-        <div class="pz-sig">${esc(r.signals || '')}</div></div>`;
+      const click = r.ticker ? 'pz-click' : '';
+      return `<div class="pz-row pz-body ${click}" style="grid-template-columns:${tmpl}" ${r.ticker ? `data-t="${esc(r.ticker)}" title="点击查看 ${esc(r.ticker)} 的个股详情"` : ''}>` +
+        cols.map(c => `<div class="${c.align === 'right' ? 'pz-r' : ''}">${cell(r, c)}</div>`).join('') + '</div>';
     }).join('');
-    root.innerHTML = head + (body || '<div class="pz-empty">暂无数据</div>');
-    root.querySelectorAll('.pz-body').forEach(el => { el.onclick = () => setTriggerValue('clicked', el.dataset.t); });
+    root.innerHTML = head + (body || `<div class="pz-empty">${esc(data.empty || '暂无数据')}</div>`);
+    root.querySelectorAll('.pz-click').forEach(el => { el.onclick = () => setTriggerValue('clicked', el.dataset.t); });
     root.querySelectorAll('[data-sort]').forEach(el => {
       el.onclick = () => {
         const k = el.dataset.sort;
@@ -267,58 +305,136 @@ export default function(component) {
 }
 """
 
-_list_component = None
+# 标签配色：操作倾向 / 象限 / 评级 / 分组 / 信号倾向……（背景, 文字）
+PILLS = {
+    "持有": ("#DDF0E4", "#1F6B3E"), "可关注": ("#DDF0E4", "#1F6B3E"), "注意": ("#FBEFD9", "#8A4B0A"),
+    "等待": ("#ECEAE4", "#5E5B53"), "考虑减仓": ("#F7E0DC", "#8E2E22"), "回避": ("#F7E0DC", "#8E2E22"),
+    "🟢 领先": ("#DDF0E4", "#1F6B3E"), "🔵 改善": ("#E6F0F8", "#1C4F7A"), "🟡 转弱": ("#FBEFD9", "#8A4B0A"),
+    "🔴 落后": ("#F7E0DC", "#8E2E22"),
+    "A 可靠": ("#155E36", "#FFFFFF"), "B 参考": ("#CFE8D8", "#1F6B3E"), "C 噪音": ("#ECEAE4", "#5E5B53"),
+    "D 反向": ("#F6D9C2", "#8A4B0A"), "⚪ 样本不足": ("#ECEAE4", "#5E5B53"),
+    "持仓": ("#E6F0F8", "#1C4F7A"), "关注": ("#ECEAE4", "#5E5B53"), "基准": ("#ECEAE4", "#5E5B53"),
+    "已移出": ("#ECEAE4", "#8A877E"),
+    "🟢 偏多": ("#DDF0E4", "#1F6B3E"), "🔴 偏空": ("#F7E0DC", "#8E2E22"), "🟡 分歧": ("#FBEFD9", "#8A4B0A"),
+    "🟢 普涨": ("#DDF0E4", "#1F6B3E"), "🔵 普遍反弹": ("#E6F0F8", "#1C4F7A"), "🟡 分化": ("#FBEFD9", "#8A4B0A"),
+    "🔴 普跌": ("#F7E0DC", "#8E2E22"), "⚠️ 少数股拉动": ("#FBEFD9", "#8A4B0A"),
+    "看多": ("#DDF0E4", "#1F6B3E"), "看空": ("#F7E0DC", "#8E2E22"),
+    "已持仓": ("#E6F0F8", "#1C4F7A"), "Watch List": ("#ECEAE4", "#5E5B53"),
+    "领涨": ("#DDF0E4", "#1F6B3E"), "同步": ("#ECEAE4", "#5E5B53"), "落后": ("#F7E0DC", "#8E2E22"),
+    "顶背驰": ("#F7E0DC", "#8E2E22"), "底背驰": ("#DDF0E4", "#1F6B3E"),
+}
+VOL_COLORS = {"放量吸筹": "#1F6B3E", "放量派发": "#8E2E22", "缩量整理": "#1C4F7A"}
+
+_list_components: dict[int, object] = {}
 
 
 def _list_comp():
-    global _list_component
-    if _list_component is None:
-        _list_component = st.components.v2.component(
-            "pz_stock_list", html='<div class="pz-wrap"><div class="pz-list"></div></div>',
+    """组件在 Streamlit 运行时（Runtime）的注册表里注册：每个运行时各注册一次（重启 / 测试会新建运行时）。"""
+    try:
+        from streamlit.runtime import Runtime
+        rid = id(Runtime.instance())
+    except Exception:
+        rid = 0
+    if rid not in _list_components:
+        _list_components[rid] = st.components.v2.component(
+            "pz_table", html='<div class="pz-wrap"><div class="pz-list"></div></div>',
             css=_LIST_CSS, js=_LIST_JS)
-    return _list_component
+    return _list_components[rid]
 
 
-def stock_list(df, key: str, sectors: dict | None = None, sort: str = "score") -> None:
-    """
-    设计稿样式的股票列表（自定义 HTML）：点击一行打开个股详情弹窗，点击「价格·当日 / 量比 / 评分」表头排序。
-    df 列同 stock_table：ticker, name, price, chg, vr, score, d5, spark, action, volume_state, signals。
-    sectors：{ticker: 板块}，显示在名称后。
-    """
+def _clean(v):
+    """JSON 友好：NaN / numpy 标量 → Python 原生值。"""
     import math
+    try:
+        import numpy as np
+        if isinstance(v, np.generic):
+            v = v.item()
+    except Exception:
+        pass
+    if isinstance(v, float) and math.isnan(v):
+        return None
+    if isinstance(v, (list, tuple)):
+        return [_clean(x) for x in v]
+    return v
+
+
+def pz_table(rows: list[dict], columns: list[dict], key: str, sort: str | None = None, desc: bool = True,
+             min_width: int = 900, empty: str = "暂无数据", names: dict | None = None) -> None:
+    """
+    全站统一的设计稿样式表格（自定义 HTML）。
+      rows     每行一个 dict；含 "ticker" 的行可点击 → 打开个股详情弹窗（ticker=None 不可点）
+      columns  [{key, label, kind, width, sortable, align, ...}]，kind：
+               stock（ticker + sub）/ price（key=价格文字, chg=涨跌% 键）/ num（decimals, sign, color, prefix, suffix, hot）
+               / score（delta=5日变化键）/ spark / pill / bar（max, suffix, barColor）/ text（colors）/ small
+    """
     from core import stock_chart as SC
-
-    sectors = sectors or {}
-
-    def num(x):
-        try:
-            x = float(x)
-        except (TypeError, ValueError):
-            return None
-        return None if math.isnan(x) else x
-
-    rows, names = [], {}
-    for r in df.to_dict("records"):
-        t = r["ticker"]
-        nm = r.get("name") or t
-        names[t] = nm
-        sub = " · ".join(x for x in [nm if str(nm).upper() != t else "", sectors.get(t, "")] if x)
-        price, chg, score, d5 = num(r.get("price")), num(r.get("chg")), num(r.get("score")), num(r.get("d5"))
-        rows.append({
-            "ticker": t, "sub": sub,
-            "price_txt": f"{price:,.2f}" if price is not None else None,
-            "chg": round(chg * 100, 2) if chg is not None else None,
-            "vr": round(num(r.get("vr")), 2) if num(r.get("vr")) is not None else None,
-            "score": int(score) if score is not None else None,
-            "d5": int(d5) if d5 is not None else None,
-            "spark": [x for x in (r.get("spark") or []) if x == x],
-            "action": r.get("action") or "", "volume_state": r.get("volume_state") or "",
-            "signals": r.get("signals") or "",
-        })
-    res = _list_comp()(data={"rows": rows, "sort": sort}, key=key, on_clicked_change=lambda: None)
+    clean = [{k: _clean(v) for k, v in r.items()} for r in rows]
+    res = _list_comp()(data={"rows": clean, "columns": columns, "sort": sort or "", "desc": desc,
+                             "minWidth": min_width, "empty": empty, "pills": PILLS},
+                       key=key, on_clicked_change=lambda: None)
     clicked = getattr(res, "clicked", None)
+    names = names or {r.get("ticker"): r.get("name") for r in rows if r.get("ticker")}
     if clicked:
         st.session_state[SC._OPEN] = {"owner": key, "ticker": clicked, "name": names.get(clicked)}
     opened = st.session_state.get(SC._OPEN)
     if opened and opened["owner"] == key:
         SC._chart_dialog(opened["ticker"], opened.get("name"))
+
+
+def pct(v, mult: float = 100.0):
+    """小数 → 百分数数值（None 安全）。"""
+    try:
+        v = float(v)
+    except (TypeError, ValueError):
+        return None
+    return None if v != v else round(v * mult, 2)
+
+
+def stock_list(df, key: str, sectors: dict | None = None, sort: str = "score") -> None:
+    """标准股票行（驾驶舱持仓评分同款）：股票 / 价格·当日 / 量比 / 评分 / 20日走势 / 操作倾向 / 量能 / 可靠信号。"""
+    sectors = sectors or {}
+    rows = []
+    for r in df.to_dict("records"):
+        t = r["ticker"]
+        nm = r.get("name") or t
+        price = _clean(r.get("price"))
+        rows.append({
+            "ticker": t, "name": nm,
+            "sub": " · ".join(x for x in [nm if str(nm).upper() != t else "", sectors.get(t, "")] if x),
+            "price_txt": f"{price:,.2f}" if isinstance(price, (int, float)) else None,
+            "chg": pct(r.get("chg")), "vr": _clean(r.get("vr")),
+            "score": int(r["score"]) if _clean(r.get("score")) is not None else None,
+            "d5": int(r["d5"]) if _clean(r.get("d5")) is not None else None,
+            "spark": [x for x in (r.get("spark") or []) if x == x],
+            "action": r.get("action") or "", "volume_state": r.get("volume_state") or "",
+            "signals": r.get("signals") or "",
+        })
+    cols = [
+        {"key": "ticker", "label": "股票", "kind": "stock", "width": "minmax(130px,1.3fr)", "sortable": True},
+        {"key": "price_txt", "label": "价格 · 当日", "kind": "price", "chg": "chg", "width": "100px",
+         "sortable": True, "sortKey": "chg"},
+        {"key": "vr", "label": "量比", "kind": "num", "suffix": "×", "hot": 2, "width": "62px", "sortable": True},
+        {"key": "score", "label": "评分", "kind": "score", "delta": "d5", "width": "96px", "sortable": True},
+        {"key": "spark", "label": "20 日走势", "kind": "spark", "width": "92px"},
+        {"key": "action", "label": "操作倾向", "kind": "pill", "width": "92px"},
+        {"key": "volume_state", "label": "量能", "kind": "text", "colors": VOL_COLORS, "width": "76px"},
+        {"key": "signals", "label": "可靠信号", "kind": "small", "width": "minmax(140px,1.7fr)"},
+    ]
+    pz_table(rows, cols, key=key, sort=sort)
+
+
+def frame_table(df, key: str, tickers: list, columns: list[dict], names: list | None = None,
+                subs: list | None = None, sort: str | None = None, desc: bool = True, min_width: int = 900) -> None:
+    """
+    DataFrame 直接转 pz_table：columns 的 key 用 DataFrame 的列名；第一列可用 {"kind": "stock", "key": "ticker_label"}。
+    tickers / names / subs 与行一一对应（ticker 为 None 的行不可点击）。
+    """
+    rows = []
+    for i, r in enumerate(df.to_dict("records")):
+        row = {k: _clean(v) for k, v in r.items()}
+        t = tickers[i] if i < len(tickers) else None
+        nm = names[i] if names else t
+        row.update({"ticker": t, "name": nm, "ticker_label": nm or t,
+                    "sub": subs[i] if subs else (t if nm and t and str(nm).upper() != str(t).upper() else "")})
+        rows.append(row)
+    pz_table(rows, columns, key=key, sort=sort, desc=desc, min_width=min_width)

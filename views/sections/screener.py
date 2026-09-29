@@ -11,7 +11,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import config
 from core import screener as S
 from core import watchlist
-from core.stock_chart import clickable_table, click_hint
+from core.stock_chart import click_hint
+from core.ui import pz_table, pct
 
 st.caption(
     "股票池 = S&P 500 ∪ Nasdaq-100 ∪ 自定义篮子 ∪ 持仓/关注（排除杠杆/反向产品），约 540 只。"
@@ -89,36 +90,43 @@ if res.empty:
     st.info("没有符合条件的股票，试着放宽条件。")
     st.stop()
 
-show = res.copy()
-show["标记"] = ["💼持仓" if t in held else ("⭐关注" if t in watch else "") for t in show["ticker"]]
-for c in ("ret_20d", "ret_63d", "dist_high52", "atr_pct", "trend_6_1"):
-    show[c] = show[c] * 100
-show["dollar_vol"] = show["dollar_vol"] / 1e6
-show["breakout20"] = show["breakout20"].map({True: "✅", False: ""})
+tags = {t: ("持仓" if t in held else ("关注" if t in watch else "")) for t in res["ticker"]}
+rows = [{
+    "ticker": r["ticker"], "name": r["name"],
+    "sub": " · ".join(x for x in [r["name"] if str(r["name"]).upper() != r["ticker"] else "",
+                                  r["sector_name"] if isinstance(r["sector_name"], str) else "", tags[r["ticker"]]] if x),
+    "quadrant": r["quadrant"] if r["quadrant"] != "—" else "",
+    "score": int(r["score"]) if pd.notna(r.get("score")) else None, "rs": r["rs"],
+    "ret_20d": pct(r["ret_20d"]), "ret_63d": pct(r["ret_63d"]), "trend_6_1": pct(r["trend_6_1"]),
+    "dist_high52": pct(r["dist_high52"]), "vol_ratio": r["vol_ratio"],
+    "breakout": "突破" if r["breakout20"] else "", "atr_pct": pct(r["atr_pct"]),
+    "dollar_vol": r["dollar_vol"] / 1e6 if pd.notna(r["dollar_vol"]) else None,
+    "price_txt": f"{r['last']:,.2f}", "ret_5d": pct(r["ret_5d"]),
+} for _, r in res.iterrows()]
 click_hint()
-clickable_table(
-    show[["ticker", "name", "标记", "sector_name", "quadrant", "score", "rs", "ret_20d", "ret_63d", "trend_6_1",
-          "dist_high52", "vol_ratio", "breakout20", "atr_pct", "dollar_vol", "last"]].rename(columns={
-        "ticker": "代码", "name": "名称", "sector_name": "板块", "quadrant": "板块象限", "score": "评分", "rs": "RS",
-        "ret_20d": "20日%", "ret_63d": "3月%", "trend_6_1": "6-1月%", "dist_high52": "距52周高%",
-        "vol_ratio": "量比", "breakout20": "20日突破", "atr_pct": "ATR%", "dollar_vol": "成交额$M",
-        "last": "收盘价",
-    }),
-    column_config={
-        "评分": st.column_config.NumberColumn(format="%d", help="综合评分：全市场百分位（趋势/量能/板块/健康等权）；≥90 为强势筛选"),
-        "RS": st.column_config.ProgressColumn(format="%d", min_value=1, max_value=99),
-        "20日%": st.column_config.NumberColumn(format="%+.1f%%"),
-        "3月%": st.column_config.NumberColumn(format="%+.1f%%"),
-        "6-1月%": st.column_config.NumberColumn(format="%+.1f%%"),
-        "距52周高%": st.column_config.NumberColumn(format="%+.1f%%"),
-        "量比": st.column_config.NumberColumn(format="%.2f", help="最近交易日成交量 / 前 50 日均量"),
-        "ATR%": st.column_config.NumberColumn(format="%.1f%%", help="14 日平均真实波幅占股价，越大波动越大"),
-        "成交额$M": st.column_config.NumberColumn(format="%.0f", help="近 50 日日均成交额中位数（百万美元）"),
-        "收盘价": st.column_config.NumberColumn(format="%.2f"),
-    },
-    width="stretch", hide_index=True, height=min(760, 80 + len(show) * 35),
-    tickers=list(show["ticker"]), names=list(show["name"]), key="scr_tbl",
-)
+pz_table(rows, [
+    {"key": "ticker", "label": "股票", "kind": "stock", "width": "minmax(150px,1.6fr)", "sortable": True},
+    {"key": "price_txt", "label": "收盘 · 5日", "kind": "price", "chg": "ret_5d", "width": "96px",
+     "sortable": True, "sortKey": "ret_5d"},
+    {"key": "score", "label": "评分", "kind": "score", "width": "64px", "sortable": True},
+    {"key": "rs", "label": "RS", "kind": "bar", "max": 99, "width": "92px", "sortable": True},
+    {"key": "ret_20d", "label": "20日", "kind": "num", "decimals": 1, "sign": True, "color": True, "suffix": "%",
+     "width": "70px", "sortable": True, "align": "right"},
+    {"key": "ret_63d", "label": "3月", "kind": "num", "decimals": 1, "sign": True, "color": True, "suffix": "%",
+     "width": "70px", "sortable": True, "align": "right"},
+    {"key": "trend_6_1", "label": "6-1月", "kind": "num", "decimals": 0, "sign": True, "color": True, "suffix": "%",
+     "width": "70px", "sortable": True, "align": "right"},
+    {"key": "dist_high52", "label": "距52周高", "kind": "num", "decimals": 1, "sign": True, "suffix": "%",
+     "width": "78px", "sortable": True, "align": "right"},
+    {"key": "vol_ratio", "label": "量比", "kind": "num", "suffix": "×", "hot": 2, "width": "62px", "sortable": True,
+     "align": "right"},
+    {"key": "breakout", "label": "20日", "kind": "text", "colors": {"突破": "#1F6B3E"}, "width": "44px"},
+    {"key": "dollar_vol", "label": "成交额", "kind": "num", "decimals": 0, "prefix": "$", "suffix": "M", "width": "72px",
+     "sortable": True, "align": "right"},
+    {"key": "quadrant", "label": "板块象限", "kind": "pill", "width": "88px"},
+], key="scr_tbl", sort="score", min_width=1060)
+st.caption("RS = IBD 式相对强度百分位；评分 = 综合评分（≥90 为强势筛选）；"
+           "成交额 = 近 50 日日均成交额中位数（美元）。点击表头排序，点击行查看个股详情。")
 
 c_sel, c_add = st.columns([4, 1])
 cands = [t for t in res["ticker"] if t not in watch]

@@ -11,7 +11,8 @@ import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import config
-from core.stock_chart import clickable_table, click_hint
+from core.stock_chart import click_hint
+from core.ui import pz_table
 from core import risk as R
 from core import option_scenarios as OS
 from core.price_updater import load_cache
@@ -60,21 +61,32 @@ for lg in legs_all:
                  "delta": s["delta"], "每日theta$": s["theta_day_usd"], "杠杆倍数": s["leverage"],
                  "盈亏平衡涨幅%": s["breakeven_move"] * 100, "IV%": lg["iv"] * 100,
                  "提示": tips[0].split("，")[0] if tips else ""})
-over = pd.DataFrame(rows)
-clickable_table(
-    over, hide_index=True, width="stretch",
-    column_config={
-        "标的价": st.column_config.NumberColumn(format="%.2f"),
-        "行权价": st.column_config.NumberColumn(format="%.2f"),
-        "当前价值$": st.column_config.NumberColumn(format="%.0f"),
-        "delta": st.column_config.NumberColumn(format="%.2f"),
-        "每日theta$": st.column_config.NumberColumn(format="%.1f", help="标的与 IV 不变时每天损失的价值"),
-        "杠杆倍数": st.column_config.NumberColumn(format="%.1f×", help="标的涨 1%，期权约涨几 %"),
-        "盈亏平衡涨幅%": st.column_config.NumberColumn(format="%+.1f%%",
-                                                  help="按当前价格买入，到期时标的需要涨多少才回本"),
-        "IV%": st.column_config.NumberColumn(format="%.0f%%"),
-    }, tickers=list(over["标的"]), key="optlab_over"
-)
+prow = [{"ticker": r["标的"], "name": r["期权"], "ticker_label": r["期权"],
+         "sub": f'{r["标的"]} · {r["张数"]:g} 张 · 行权 {r["行权价"]:,.2f}',
+         "dte": r["剩余天数"], "S": r["标的价"], "value": r["当前价值$"], "delta": r["delta"],
+         "theta": r["每日theta$"], "lev": r["杠杆倍数"], "be": r["盈亏平衡涨幅%"], "iv": r["IV%"], "tip": r["提示"]}
+        for r in rows]
+pz_table(prow, [
+    {"key": "ticker_label", "label": "期权", "kind": "stock", "width": "minmax(150px,1.4fr)"},
+    {"key": "dte", "label": "剩余天数", "kind": "num", "decimals": 0, "hot": 10**9, "width": "70px", "sortable": True,
+     "align": "right"},
+    {"key": "S", "label": "标的价", "kind": "num", "decimals": 2, "width": "84px", "align": "right"},
+    {"key": "value", "label": "当前价值", "kind": "num", "decimals": 0, "prefix": "$", "width": "88px",
+     "sortable": True, "align": "right"},
+    {"key": "delta", "label": "delta", "kind": "bar", "max": 1, "decimals": 2, "labelW": 34, "width": "110px",
+     "sortable": True, "barColor": "#1C4F7A"},
+    {"key": "theta", "label": "每日 theta", "kind": "num", "decimals": 1, "prefix": "$", "color": True,
+     "width": "80px", "sortable": True, "align": "right"},
+    {"key": "lev", "label": "杠杆", "kind": "num", "decimals": 1, "suffix": "×", "width": "56px", "sortable": True,
+     "align": "right"},
+    {"key": "be", "label": "盈亏平衡涨幅", "kind": "num", "decimals": 1, "sign": True, "suffix": "%", "width": "92px",
+     "sortable": True, "align": "right"},
+    {"key": "iv", "label": "IV", "kind": "num", "decimals": 0, "suffix": "%", "width": "52px", "sortable": True,
+     "align": "right"},
+    {"key": "tip", "label": "提示", "kind": "small", "width": "minmax(140px,1.4fr)"},
+], key="optlab_over", sort="dte", desc=False, min_width=1060)
+st.caption("杠杆 = 标的涨 1% 期权约涨几 %；盈亏平衡涨幅 = 按当前价格买入、到期时标的需要涨多少才回本；"
+           "点击行打开标的的个股详情。")
 tot_theta = sum(OS.leg_stats(lg)["theta_day_usd"] for lg in legs_all)
 st.caption(f"全部期权合计：价值 \\${sum(OS.current_value([lg]) for lg in legs_all):,.0f} ｜ "
            f"每日时间损耗 {-tot_theta:,.1f} 美元 ｜ 每月约 {-tot_theta * 30:,.0f} 美元")

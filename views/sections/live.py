@@ -13,7 +13,8 @@ import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import config
-from core.stock_chart import clickable_table, click_hint
+from core.stock_chart import click_hint
+from core.ui import pz_table, pct, _clean
 from core import tracker as tk
 from core import signal_backtest as sbt
 from core.fx import get_fx_rates
@@ -72,6 +73,16 @@ def _money(v) -> str:
 
 
 uni = _universe()
+
+
+def _sub(name, ticker, *extra) -> str:
+    return " · ".join(x for x in [name if name and str(name).upper() != ticker else "", *extra] if x)
+
+
+_PCT = lambda k, lab, w="76px", d=2: {"key": k, "label": lab, "kind": "num", "decimals": d, "sign": True,
+                                      "color": True, "suffix": "%", "width": w, "sortable": True, "align": "right"}
+_USD = lambda k, lab, w="84px": {"key": k, "label": lab, "kind": "num", "decimals": 0, "sign": True, "color": True,
+                                 "prefix": "$", "width": w, "sortable": True, "align": "right"}
 status = tk.us_market_status()
 live = status == "交易中"
 
@@ -145,16 +156,12 @@ if _SECTION == "live":
                                  (cR, "🔴 跌幅榜", stocks.tail(8).iloc[::-1])]:
             with col:
                 st.markdown(f"**{title}**")
-                t = part[["name", "ticker", "group", "chg", "pnl_usd"]].copy()
-                t["chg"] = t["chg"] * 100
-                t["pnl_usd"] = t["pnl_usd"].map(_money)
-                clickable_table(
-                    t.rename(columns={"name": "名称", "ticker": "代码", "group": "分组",
-                                      "chg": "当日%", "pnl_usd": "盈亏$"})
-                     .style.map(_color_pct, subset=["当日%", "盈亏$"])
-                     .format({"当日%": "{:+.2f}%"}, na_rep="—"),
-                    width="stretch", hide_index=True, tickers=list(part["ticker"]), key=f"live_mv_{title}", names=list(part["name"])
-                )
+                rows = [{"ticker": r["ticker"], "name": r["name"], "sub": _sub(r["name"], r["ticker"], r["group"]),
+                         "chg": pct(r["chg"]), "pnl": _clean(r["pnl_usd"])} for _, r in part.iterrows()]
+                pz_table(rows, [
+                    {"key": "ticker", "label": "股票", "kind": "stock", "width": "minmax(110px,1fr)"},
+                    _PCT("chg", "当日"), _USD("pnl", "盈亏"),
+                ], key=f"live_mv_{title}", min_width=360)
 
         # ── 盘中放量 ──
         res_bt = sbt.load_result()
@@ -167,20 +174,18 @@ if _SECTION == "live":
             if "分钟内" not in vnote:
                 st.caption("暂无明显放量。")
         else:
-            vv = va.copy()
-            vv["chg"] = vv["chg"] * 100
-            vv["预计信号"] = [f"{sg}（{gr[0]}）" if sg and gr else (sg or "") for sg, gr in zip(vv["signal"], vv["grade"])]
-            vv["突破"] = vv["breakout"].map({True: "✅", False: ""})
-            clickable_table(
-                vv[["name", "ticker", "group", "pvr", "chg", "突破", "预计信号"]].rename(columns={
-                    "name": "名称", "ticker": "代码", "group": "分组", "pvr": "预计量比", "chg": "当日%"})
-                .style.map(lambda x: "background-color: rgba(232,168,76,0.25); font-weight: 600"
-                           if isinstance(x, (int, float)) and x >= 2 else "", subset=["预计量比"])
-                .map(_color_pct, subset=["当日%"])
-                .format({"预计量比": "{:.2f}", "当日%": "{:+.2f}%"}, na_rep="—"),
-                tickers=list(vv["ticker"]), names=list(vv["name"]), key="live_vol",
-                hide_index=True, width="stretch",
-            )
+            rows = [{"ticker": r["ticker"], "name": r["name"], "sub": _sub(r["name"], r["ticker"], r["group"]),
+                     "pvr": _clean(r["pvr"]), "chg": pct(r["chg"]), "brk": "突破 20 日高" if r["breakout"] else "",
+                     "sig": (f"{r['signal']}（{r['grade'][0]}）" if r["signal"] and r["grade"] else (r["signal"] or ""))}
+                    for _, r in va.iterrows()]
+            pz_table(rows, [
+                {"key": "ticker", "label": "股票", "kind": "stock", "width": "minmax(130px,1.2fr)"},
+                {"key": "pvr", "label": "预计量比", "kind": "num", "suffix": "×", "hot": 2, "width": "84px",
+                 "sortable": True, "align": "right"},
+                _PCT("chg", "当日"),
+                {"key": "brk", "label": "突破", "kind": "text", "colors": {"突破 20 日高": "#1F6B3E"}, "width": "96px"},
+                {"key": "sig", "label": "预计信号（评级）", "kind": "small", "width": "minmax(140px,1.5fr)"},
+            ], key="live_vol", sort="pvr", min_width=640)
 
         # ── 关键价位预警（持仓）──
         st.markdown("**🎯 关键价位预警**（持仓：今日穿越或距离 ±1% 以内的 Fib / 筹码价位）")
@@ -190,37 +195,38 @@ if _SECTION == "live":
         if alerts.empty:
             st.caption("暂无持仓接近关键价位。")
         else:
-            a = alerts.copy()
-            a["dist"] = a["dist"] * 100
-            a["chg"] = a["chg"] * 100
-            clickable_table(
-                a[["name", "ticker", "event", "kind", "level", "last", "dist", "chg", "verdict"]]
-                .rename(columns={"name": "名称", "ticker": "代码", "event": "事件", "kind": "类型",
-                                 "level": "价位", "last": "现价", "dist": "距价位%", "chg": "当日%",
-                                 "verdict": "该类信号历史表现"})
-                .style.map(_color_pct, subset=["当日%"])
-                .format({"价位": "{:,.2f}", "现价": "{:,.2f}", "距价位%": "{:+.1f}%",
-                         "当日%": "{:+.2f}%"}, na_rep="—"),
-                width="stretch", hide_index=True, tickers=list(a["ticker"]), key="live_alerts", names=list(a["name"])
-            )
+            rows = [{"ticker": r["ticker"], "name": r["name"], "sub": _sub(r["name"], r["ticker"]),
+                     "event": r["event"], "kind": r["kind"], "level": _clean(r["level"]), "last": _clean(r["last"]),
+                     "dist": pct(r["dist"]), "chg": pct(r["chg"]), "verdict": r["verdict"] or ""}
+                    for _, r in alerts.iterrows()]
+            pz_table(rows, [
+                {"key": "ticker", "label": "股票", "kind": "stock", "width": "minmax(120px,1.1fr)"},
+                {"key": "event", "label": "事件", "kind": "text", "width": "minmax(110px,1fr)",
+                 "colors": {}},
+                {"key": "kind", "label": "类型", "kind": "text", "width": "52px"},
+                {"key": "level", "label": "价位", "kind": "num", "decimals": 2, "width": "90px", "align": "right"},
+                {"key": "last", "label": "现价", "kind": "num", "decimals": 2, "width": "90px", "align": "right"},
+                _PCT("dist", "距价位", "76px", 1), _PCT("chg", "当日"),
+                {"key": "verdict", "label": "该类信号历史", "kind": "pill", "width": "96px"},
+            ], key="live_alerts", min_width=820)
             st.caption("价位按截至昨日的日线计算（本币）；「该类信号历史表现」来自量能健康页的📐信号成绩单，"
                        "❌/🟡 表示这类信号过去并不可靠。")
 
         # ── 全部 ──
         with st.expander(f"📋 全部 {len(board)} 只（持仓 + 关注 + 基准）"):
-            t = board[["name", "ticker", "group", "sector", "last", "prev_close", "chg",
-                       "pnl_usd", "bar_date"]].copy()
-            t["chg"] = t["chg"] * 100
-            t["pnl_usd"] = t["pnl_usd"].map(_money)
-            clickable_table(
-                t.rename(columns={"name": "名称", "ticker": "代码", "group": "分组", "sector": "板块",
-                                  "last": "最新价", "prev_close": "昨收", "chg": "当日%",
-                                  "pnl_usd": "盈亏$", "bar_date": "K线日期"})
-                 .style.map(_color_pct, subset=["当日%", "盈亏$"])
-                 .format({"最新价": "{:,.2f}", "昨收": "{:,.2f}", "当日%": "{:+.2f}%",
-                          }, na_rep="—"),
-                width="stretch", hide_index=True, height=min(700, 80 + len(t) * 35), tickers=list(board["ticker"]), key="live_all", names=list(board["name"])
-            )
+            rows = [{"ticker": r["ticker"], "name": r["name"], "sub": _sub(r["name"], r["ticker"], r["sector"]),
+                     "group": r["group"], "price_txt": f"{r['last']:,.2f}", "chg": pct(r["chg"]),
+                     "prev": _clean(r["prev_close"]), "pnl": _clean(r["pnl_usd"]), "bar_date": r["bar_date"]}
+                    for _, r in board.iterrows()]
+            pz_table(rows, [
+                {"key": "ticker", "label": "股票", "kind": "stock", "width": "minmax(130px,1.3fr)", "sortable": True},
+                {"key": "group", "label": "分组", "kind": "pill", "width": "60px"},
+                {"key": "price_txt", "label": "最新 · 当日", "kind": "price", "chg": "chg", "width": "110px",
+                 "sortable": True, "sortKey": "chg"},
+                {"key": "prev", "label": "昨收", "kind": "num", "decimals": 2, "width": "96px", "align": "right"},
+                _USD("pnl", "盈亏"),
+                {"key": "bar_date", "label": "K 线日期", "kind": "text", "width": "96px"},
+            ], key="live_all", sort="chg", min_width=720)
             st.caption("最新价 / 昨收为本币；盈亏按最新汇率折美元。期权与现金不在此计算。"
                        "K线日期早于其他股票的，多为当地休市（如韩国中秋）。")
 
@@ -287,20 +293,20 @@ if _SECTION == "day0":
         groups = st.multiselect("分组", ["持仓", "关注", "基准", "已移出"], default=["持仓", "关注"],
                                 key="track_groups")
         show = table[table["group"].isin(groups)].copy()
-        show["胜率"] = show.apply(lambda r: f"{r['up_days']}/{r['n_days']}" if r["n_days"] else "—", axis=1)
-        for c in ("cum", "excess", "best_day", "worst_day"):
-            show[c] = show[c] * 100
-        clickable_table(
-            show[["name", "ticker", "group", "added", "cum", "excess", "胜率", "best_day", "worst_day",
-                  "last"]].rename(columns={
-                "name": "名称", "ticker": "代码", "group": "分组", "added": "加入日",
-                "cum": "累计%", "excess": "vs SPY%", "胜率": "上涨天数",
-                "best_day": "最大单日涨%", "worst_day": "最大单日跌%", "last": "最新价$",
-            }).style.map(_color_pct, subset=["累计%", "vs SPY%", "最大单日涨%", "最大单日跌%"])
-              .format({"累计%": "{:+.2f}%", "vs SPY%": "{:+.2f}%", "最大单日涨%": "{:+.2f}%",
-                       "最大单日跌%": "{:+.2f}%", "最新价$": "{:,.2f}"}, na_rep="—"),
-            width="stretch", hide_index=True, height=min(700, 80 + len(show) * 35), tickers=list(show["ticker"]), key="day0_board", names=list(show["name"])
-        )
+        rows = [{"ticker": r["ticker"], "name": r["name"], "sub": _sub(r["name"], r["ticker"], f"加入 {r['added']}"),
+                 "group": r["group"], "cum": pct(r["cum"]), "excess": pct(r["excess"]),
+                 "wins": f"{r['up_days']}/{r['n_days']}" if r["n_days"] else "—",
+                 "win_rate": (r["up_days"] / r["n_days"]) if r["n_days"] else None,
+                 "best": pct(r["best_day"]), "worst": pct(r["worst_day"]), "last": _clean(r["last"])}
+                for _, r in show.iterrows()]
+        pz_table(rows, [
+            {"key": "ticker", "label": "股票", "kind": "stock", "width": "minmax(140px,1.4fr)", "sortable": True},
+            {"key": "group", "label": "分组", "kind": "pill", "width": "60px"},
+            _PCT("cum", "累计"), _PCT("excess", "vs SPY"),
+            {"key": "wins", "label": "上涨天数", "kind": "text", "width": "72px", "sortKey": "win_rate", "sortable": True},
+            _PCT("best", "最大单日涨"), _PCT("worst", "最大单日跌"),
+            {"key": "last", "label": "最新价 $", "kind": "num", "decimals": 2, "width": "90px", "align": "right"},
+        ], key="day0_board", sort="cum", min_width=820)
 
         # ── 每日涨跌热力图 ──
         daily = h["daily"]

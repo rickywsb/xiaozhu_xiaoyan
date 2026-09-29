@@ -11,7 +11,8 @@ import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import config
-from core.stock_chart import clickable_table, click_hint
+from core.stock_chart import click_hint
+from core.ui import pz_table, pct, _clean
 from core import risk as R
 from core.price_updater import load_cache
 
@@ -111,24 +112,26 @@ with tab_exp:
         tbl[f"β {b}"] = betas[f"beta_{b}"].reindex(tbl.index) if f"beta_{b}" in betas else None
     tbl["年化波动%"] = betas["vol"].reindex(tbl.index) * 100 if "vol" in betas else None
     tbl = tbl.reset_index().rename(columns={"index": "标的", "underlying": "标的"})
-    clickable_table(
-        tbl[["标的", "板块", "股票市值", "期权等效敞口", "合计敞口", "占净值%", "风险贡献%",
-             "β SPY", "β SOXX", "年化波动%"]],
-        column_config={
-            "股票市值": st.column_config.NumberColumn(format="$%,.0f"),
-            "期权等效敞口": st.column_config.NumberColumn(format="$%,.0f"),
-            "合计敞口": st.column_config.NumberColumn(format="$%,.0f"),
-            "占净值%": st.column_config.ProgressColumn(format="%.1f%%", min_value=0,
-                                                   max_value=max(30.0, float(tbl["占净值%"].max()))),
-            "风险贡献%": st.column_config.ProgressColumn(format="%.1f%%", min_value=0,
-                                                    max_value=max(30.0, float(tbl["风险贡献%"].max())),
-                                                    help="该标的对组合总波动的贡献占比（考虑相关性）"),
-            "β SPY": st.column_config.NumberColumn(format="%.2f"),
-            "β SOXX": st.column_config.NumberColumn(format="%.2f"),
-            "年化波动%": st.column_config.NumberColumn(format="%.0f%%"),
-        },
-        width="stretch", hide_index=True, height=min(760, 80 + len(tbl) * 35), tickers=list(tbl["标的"]), key="risk_exp"
-    )
+    mx_w = max(30.0, float(tbl["占净值%"].max()))
+    mx_r = max(30.0, float(tbl["风险贡献%"].max()))
+    rows = [{"ticker": r["标的"], "sub": r["板块"] if isinstance(r["板块"], str) else "",
+             "stock": _clean(r["股票市值"]), "opt": _clean(r["期权等效敞口"]), "total": _clean(r["合计敞口"]),
+             "w": _clean(r["占净值%"]), "rc": _clean(r["风险贡献%"]), "b_spy": _clean(r["β SPY"]),
+             "b_soxx": _clean(r["β SOXX"]), "vol": _clean(r["年化波动%"])} for _, r in tbl.iterrows()]
+    _usd = lambda k, lab: {"key": k, "label": lab, "kind": "num", "decimals": 0, "prefix": "$", "width": "84px",
+                           "sortable": True, "align": "right"}
+    pz_table(rows, [
+        {"key": "ticker", "label": "标的", "kind": "stock", "width": "minmax(100px,1fr)", "sortable": True},
+        _usd("stock", "股票市值"), _usd("opt", "期权等效"), _usd("total", "合计敞口"),
+        {"key": "w", "label": "占净值", "kind": "bar", "max": mx_w, "decimals": 1, "suffix": "%", "labelW": 42,
+         "barColor": "#1C4F7A", "width": "108px", "sortable": True},
+        {"key": "rc", "label": "风险贡献", "kind": "bar", "max": mx_r, "decimals": 1, "suffix": "%", "labelW": 42,
+         "barColor": "#C7711F", "width": "108px", "sortable": True},
+        {"key": "b_spy", "label": "β SPY", "kind": "num", "decimals": 2, "width": "58px", "sortable": True, "align": "right"},
+        {"key": "b_soxx", "label": "β SOXX", "kind": "num", "decimals": 2, "width": "62px", "sortable": True, "align": "right"},
+        {"key": "vol", "label": "年化波动", "kind": "num", "decimals": 0, "suffix": "%", "width": "70px",
+         "sortable": True, "align": "right"},
+    ], key="risk_exp", sort="total", min_width=900)
     st.caption("风险贡献 = 敞口 × (协方差 × 敞口) / 组合方差，高波动且与其他持仓高度相关的标的贡献更大；"
                "风险贡献明显高于敞口占比的，是组合真正的风险来源。"
                "亚洲市场标的（如 .KS / .HK）收盘早于美股，同日收益不同步，β 与相关性会被低估。")
@@ -205,17 +208,20 @@ with tab_stress:
                      column_config={"盈亏$": st.column_config.NumberColumn(format="$%+,.0f")})
     with c2:
         st.markdown("**亏损最大的仓位**")
-        d = detail[detail["kind"] != "cash"].sort_values("pnl").head(10).copy()
-        d["move"] = d["move"] * 100
-        clickable_table(
-            d[["display", "kind", "sector", "move", "value", "pnl"]].rename(columns={
-                "display": "仓位", "kind": "类型", "sector": "板块", "move": "标的涨跌%",
-                "value": "当前市值", "pnl": "盈亏$"}),
-            hide_index=True, width="stretch",
-            column_config={"标的涨跌%": st.column_config.NumberColumn(format="%+.1f%%"),
-                           "当前市值": st.column_config.NumberColumn(format="$%,.0f"),
-                           "盈亏$": st.column_config.NumberColumn(format="$%+,.0f")}, tickers=list(d["underlying"]), key="risk_worst", names=list(d["display"])
-        )
+        d = detail[detail["kind"] != "cash"].sort_values("pnl").head(10)
+        rows = [{"ticker": r["underlying"], "name": r["display"], "ticker_label": r["display"],
+                 "sub": " · ".join(x for x in [{"stock": "股票", "option": "期权"}.get(r["kind"], r["kind"]), r["sector"]] if x),
+                 "move": pct(r["move"]), "value": _clean(r["value"]), "pnl": _clean(r["pnl"])}
+                for _, r in d.iterrows()]
+        pz_table(rows, [
+            {"key": "ticker_label", "label": "仓位", "kind": "stock", "width": "minmax(120px,1.3fr)"},
+            {"key": "move", "label": "标的涨跌", "kind": "num", "decimals": 1, "sign": True, "color": True,
+             "suffix": "%", "width": "80px", "align": "right"},
+            {"key": "value", "label": "当前市值", "kind": "num", "decimals": 0, "prefix": "$", "width": "92px",
+             "align": "right"},
+            {"key": "pnl", "label": "盈亏", "kind": "num", "decimals": 0, "prefix": "$", "sign": True, "color": True,
+             "width": "92px", "align": "right"},
+        ], key="risk_worst", min_width=460)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 自定义情景

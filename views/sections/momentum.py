@@ -12,7 +12,8 @@ import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import config
-from core.stock_chart import clickable_table, click_hint
+from core.stock_chart import click_hint
+from core.ui import frame_table
 from core.daily_momentum import PERIODS, score_holdings, fetch_histories, DEFAULT_DECAY, DEFAULT_WINDOW
 try:
     from core.daily_momentum import score_holdings_ema, EMA_SPANS
@@ -315,8 +316,13 @@ with tab_overview:
             ps["_o"] = ps["倾向"].map({"🔴 偏空": 0, "🟢 偏多": 1, "🟡 分歧": 2, "—": 3})
             ps = ps.sort_values("_o").drop(columns="_o").reset_index(drop=True)
             cols = ["股票", "代码", "分组", "倾向", "可靠看多信号", "可靠看空信号"] + (["反向提示"] if show_noise else [])
-            clickable_table(ps[cols], tickers=list(ps["代码"]), names=list(ps["股票"]), key="ov_stocks",
-                            hide_index=True, width="stretch", height=min(600, 80 + len(ps) * 35))
+            frame_table(ps, key="ov_stocks", tickers=list(ps["代码"]), names=list(ps["股票"]),
+                        subs=[g for g in ps["分组"]], columns=[
+                {"key": "ticker_label", "label": "股票", "kind": "stock", "width": "minmax(120px,1.2fr)"},
+                {"key": "倾向", "label": "倾向", "kind": "pill", "width": "84px"},
+                {"key": "可靠看多信号", "label": "可靠看多信号", "kind": "small", "width": "minmax(160px,1.6fr)"},
+                {"key": "可靠看空信号", "label": "可靠看空信号", "kind": "small", "width": "minmax(140px,1.3fr)"},
+            ] + ([{"key": "反向提示", "label": "反向提示", "kind": "small", "width": "minmax(140px,1.3fr)"}] if show_noise else []), min_width=760)
         if detail_rows:
             with st.expander(f"📋 逐条信号明细（{len(detail_rows)} 条）"):
                 dr = pd.DataFrame(detail_rows)
@@ -397,8 +403,15 @@ with tab_vol:
                            if isinstance(x, (int, float)) and x else "", subset=["当日%", "5日%"])
                       .format({"量比": "{:.2f}", "5日量比": "{:.2f}", "当日%": "{:+.2f}%", "5日%": "{:+.2f}%",
                                "距20日高%": "{:+.1f}%"}, na_rep="—"))
-            clickable_table(styled, tickers=list(v["ticker"]), names=list(v["名称"]), key="vol_tbl",
-                            hide_index=True, width="stretch", height=min(700, 80 + len(v) * 35))
+            frame_table(v, key="vol_tbl", tickers=list(v["ticker"]), names=list(v["名称"]),
+                        subs=list(v["分组"]), columns=[
+                {"key": "ticker_label", "label": "股票", "kind": "stock", "width": "minmax(120px,1.2fr)"},
+                {"key": "vr", "label": "量比", "kind": "num", "decimals": 2, "width": "66px", "align": "right", "sortable": True, "suffix": "×", "hot": 2},
+                {"key": "ret_1d", "label": "当日", "kind": "num", "decimals": 2, "width": "76px", "align": "right", "sortable": True, "suffix": "%", "sign": True, "color": True}, {"key": "vr_5d", "label": "5日量比", "kind": "num", "decimals": 2, "width": "70px", "align": "right", "sortable": True, "suffix": "×"},
+                {"key": "ret_5d", "label": "5日", "kind": "num", "decimals": 2, "width": "76px", "align": "right", "sortable": True, "suffix": "%", "sign": True, "color": True}, {"key": "dist_high20", "label": "距20日高", "kind": "num", "decimals": 1, "width": "80px", "align": "right", "sortable": True, "suffix": "%"},
+                {"key": "放量信号", "label": "放量信号（评级）", "kind": "small", "width": "minmax(150px,1.5fr)"},
+                {"key": "bar_date", "label": "K 线日期", "kind": "text", "width": "92px"},
+            ], sort="vr", min_width=900)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -482,12 +495,19 @@ with tab_ema:
                 "RS排名", format="%d", min_value=0, max_value=100,
                 help="组合内相对强度百分位，越高越领涨")
         _bt_caption("EMA量能")
-        clickable_table(
-            show_ema[cols],
-            column_config=col_cfg,
-            width="stretch", hide_index=True,
-            height=min(560, 80 + len(show_ema) * 35), tickers=list(show_ema["ticker"]), key="mom_ema", names=list(show_ema["股票"])
-        )
+        frame_table(show_ema, key="mom_ema", tickers=list(show_ema["ticker"]), names=list(show_ema["股票"]),
+            subs=list(show_ema["状态"]), columns=[
+                {"key": "灯", "label": "", "kind": "text", "width": "24px"}, {"key": "ticker_label", "label": "股票", "kind": "stock", "width": "minmax(200px,2fr)"},
+                {"key": "量能分", "label": "量能分", "kind": "bar", "width": "120px", "sortable": True},
+                {"key": "现价", "label": "现价", "kind": "num", "decimals": 2, "width": "84px", "align": "right", "sortable": True}, {"key": f"EMA{m_span}", "label": f"EMA{m_span}", "kind": "num", "decimals": 2, "width": "84px", "align": "right", "sortable": True},
+                {"key": "乖离%", "label": "乖离", "kind": "num", "decimals": 1, "width": "76px", "align": "right", "sortable": True, "suffix": "%", "sign": True, "color": True}, {"key": "斜率%(5日)", "label": "斜率(5日)", "kind": "num", "decimals": 2, "width": "80px", "align": "right", "sortable": True, "suffix": "%", "sign": True, "color": True},
+            ] + ([
+                {"key": "相对强度", "label": "相对强度", "kind": "pill", "width": "70px"},
+                {"key": "基准", "label": "基准", "kind": "text", "width": "52px"},
+                {"key": "vs基准%(3月)", "label": "vs基准 3月", "kind": "num", "decimals": 1, "width": "84px", "align": "right", "sortable": True, "suffix": "%", "sign": True, "color": True},
+                {"key": f"vs{config.DEFAULT_BENCHMARK}%(3月)", "label": "vsSPY 3月", "kind": "num", "decimals": 1, "width": "84px", "align": "right", "sortable": True, "suffix": "%", "sign": True, "color": True},
+                {"key": "RS排名", "label": "RS排名", "kind": "bar", "width": "100px", "sortable": True},
+            ] if has_rs else []), sort="量能分", min_width=1100 if has_rs else 780)
         if has_rs:
             _bm_txt = " · ".join(f"{k}→{v}" for k, v in config.SECTOR_BENCHMARKS.items())
             st.caption(f"🏅 **相对强度 RS** = 个股（美元计价）相对**所属板块基准**的强弱（{_bm_txt}，"
@@ -671,23 +691,14 @@ with tab_fib:
             cols = ["灯", "股票", "预警", "信号", "现价", "最近Fib位", "该位价",
                     "回撤%", "距最近位%", "量能分", "波段高", "波段低"]
             _bt_caption("Fib回撤")
-            clickable_table(
-                show_fib[cols],
-                column_config={
-                    "现价": st.column_config.NumberColumn("现价", format="$%.2f"),
-                    "该位价": st.column_config.NumberColumn("该位价", format="$%.2f"),
-                    "波段高": st.column_config.NumberColumn("波段高", format="$%.2f"),
-                    "波段低": st.column_config.NumberColumn("波段低", format="$%.2f"),
-                    "回撤%": st.column_config.NumberColumn("回撤%", format="%.1f%%",
-                        help="从波段极值回吐的比例，越大回撤越深"),
-                    "距最近位%": st.column_config.NumberColumn("距最近位%", format="%+.1f%%",
-                        help="现价距最近 Fib 位；接近 0=正贴该位"),
-                    "量能分": st.column_config.ProgressColumn("量能分", format="%d",
-                        min_value=0, max_value=100, help="EMA 量能分，共振参考"),
-                },
-                width="stretch", hide_index=True,
-                height=min(500, 80 + len(show_fib) * 35), tickers=list(show_fib["ticker"]), key="mom_fib", names=list(show_fib["股票"])
-            )
+            frame_table(show_fib, key="mom_fib", tickers=list(show_fib["ticker"]), names=list(show_fib["股票"]),
+                subs=list(show_fib["信号"]), columns=[
+                {"key": "灯", "label": "", "kind": "text", "width": "24px"}, {"key": "ticker_label", "label": "股票", "kind": "stock", "width": "minmax(190px,2fr)"},
+                {"key": "预警", "label": "预警", "kind": "text", "width": "minmax(96px,1fr)"},
+                {"key": "现价", "label": "现价", "kind": "num", "decimals": 2, "width": "84px", "align": "right", "sortable": True}, {"key": "最近Fib位", "label": "最近 Fib", "kind": "text", "width": "64px"},
+                {"key": "该位价", "label": "该位价", "kind": "num", "decimals": 2, "width": "84px", "align": "right", "sortable": True}, {"key": "回撤%", "label": "回撤", "kind": "num", "decimals": 1, "width": "66px", "align": "right", "sortable": True, "suffix": "%"}, {"key": "距最近位%", "label": "距最近位", "kind": "num", "decimals": 1, "width": "80px", "align": "right", "sortable": True, "suffix": "%", "sign": True, "color": True},
+                {"key": "量能分", "label": "量能分", "kind": "bar", "width": "100px", "sortable": True}, {"key": "波段高", "label": "波段高", "kind": "num", "decimals": 2, "width": "84px", "align": "right", "sortable": True}, {"key": "波段低", "label": "波段低", "kind": "num", "decimals": 2, "width": "84px", "align": "right", "sortable": True},
+            ], min_width=1180)
 
             break_rows = triggered[triggered["category"] == "破位预警"]
             if not break_rows.empty:
@@ -869,26 +880,14 @@ with tab_vp:
             cols = ["灯", "股票", "预警", "信号", "现价", "POC", "VAH", "VAL",
                     "距POC%", "价值区宽度%", "量能分"]
             _bt_caption("筹码分布")
-            clickable_table(
-                show_vp[cols],
-                column_config={
-                    "现价": st.column_config.NumberColumn("现价", format="$%.2f"),
-                    "POC": st.column_config.NumberColumn("POC", format="$%.2f",
-                        help="成交最密集价位（最强支撑/阻力/磁吸）"),
-                    "VAH": st.column_config.NumberColumn("VAH", format="$%.2f",
-                        help="价值区上沿"),
-                    "VAL": st.column_config.NumberColumn("VAL", format="$%.2f",
-                        help="价值区下沿"),
-                    "距POC%": st.column_config.NumberColumn("距POC%", format="%+.1f%%",
-                        help="现价相对 POC；正=上方"),
-                    "价值区宽度%": st.column_config.NumberColumn("价值区宽度%", format="%.1f%%",
-                        help="价值区宽度（相对 POC）；越小筹码越集中"),
-                    "量能分": st.column_config.ProgressColumn("量能分", format="%d",
-                        min_value=0, max_value=100, help="EMA 量能分，共振参考"),
-                },
-                width="stretch", hide_index=True,
-                height=min(500, 80 + len(show_vp) * 35), tickers=list(show_vp["ticker"]), key="mom_vp", names=list(show_vp["股票"])
-            )
+            frame_table(show_vp, key="mom_vp", tickers=list(show_vp["ticker"]), names=list(show_vp["股票"]),
+                subs=list(show_vp["信号"]), columns=[
+                {"key": "灯", "label": "", "kind": "text", "width": "24px"}, {"key": "ticker_label", "label": "股票", "kind": "stock", "width": "minmax(170px,1.8fr)"},
+                {"key": "预警", "label": "预警", "kind": "text", "width": "minmax(80px,0.8fr)"},
+                {"key": "现价", "label": "现价", "kind": "num", "decimals": 2, "width": "84px", "align": "right", "sortable": True}, {"key": "POC", "label": "POC", "kind": "num", "decimals": 2, "width": "84px", "align": "right", "sortable": True}, {"key": "VAH", "label": "VAH", "kind": "num", "decimals": 2, "width": "84px", "align": "right", "sortable": True},
+                {"key": "VAL", "label": "VAL", "kind": "num", "decimals": 2, "width": "84px", "align": "right", "sortable": True}, {"key": "距POC%", "label": "距 POC", "kind": "num", "decimals": 1, "width": "76px", "align": "right", "sortable": True, "suffix": "%", "sign": True, "color": True}, {"key": "价值区宽度%", "label": "价值区宽", "kind": "num", "decimals": 1, "width": "76px", "align": "right", "sortable": True, "suffix": "%"},
+                {"key": "量能分", "label": "量能分", "kind": "bar", "width": "100px", "sortable": True},
+            ], min_width=1080)
 
             down_rows = triggered_vp[triggered_vp["category"] == "跌破VAL"]
             if not down_rows.empty:
@@ -1082,22 +1081,16 @@ with tab_div:
             cols = ["灯", "股票", "背驰", "说明", "现价", "DIF", "DEA",
                     "MACD柱", "MACD状态", "量能分", "相对强度"]
             _bt_caption("背驰")
-            clickable_table(
-                show_div[cols],
-                column_config={
-                    "现价": st.column_config.NumberColumn("现价", format="$%.2f"),
-                    "DIF": st.column_config.NumberColumn("DIF", format="%.3f",
-                        help="MACD 快线（EMA12−EMA26）"),
-                    "DEA": st.column_config.NumberColumn("DEA", format="%.3f",
-                        help="MACD 慢线（DIF 的 EMA9）"),
-                    "MACD柱": st.column_config.NumberColumn("MACD柱", format="%+.3f",
-                        help="(DIF−DEA)×2；柱缩短=动能衰减"),
-                    "量能分": st.column_config.ProgressColumn("量能分", format="%d",
-                        min_value=0, max_value=100, help="EMA 量能分，共振参考"),
-                },
-                width="stretch", hide_index=True,
-                height=min(500, 80 + len(show_div) * 35), tickers=list(show_div["ticker"]), key="mom_div", names=list(show_div["股票"])
-            )
+            frame_table(show_div, key="mom_div", tickers=list(show_div["ticker"]), names=list(show_div["股票"]),
+                subs=list(show_div["MACD状态"]), columns=[
+                {"key": "灯", "label": "", "kind": "text", "width": "24px"}, {"key": "ticker_label", "label": "股票", "kind": "stock", "width": "minmax(140px,1.3fr)"},
+                {"key": "背驰", "label": "背驰", "kind": "pill", "width": "64px"},
+                {"key": "说明", "label": "说明", "kind": "small", "width": "minmax(160px,1.8fr)"},
+                {"key": "现价", "label": "现价", "kind": "num", "decimals": 2, "width": "84px", "align": "right", "sortable": True}, {"key": "DIF", "label": "DIF", "kind": "num", "decimals": 3, "width": "70px", "align": "right", "sortable": True}, {"key": "DEA", "label": "DEA", "kind": "num", "decimals": 3, "width": "70px", "align": "right", "sortable": True},
+                {"key": "MACD柱", "label": "MACD柱", "kind": "num", "decimals": 3, "width": "74px", "align": "right", "sortable": True, "sign": True, "color": True},
+                {"key": "量能分", "label": "量能分", "kind": "bar", "width": "100px", "sortable": True},
+                {"key": "相对强度", "label": "相对强度", "kind": "pill", "width": "70px"},
+            ], min_width=1120)
 
             top_rows = triggered_div[triggered_div["signal"] == "顶背驰"]
             if not top_rows.empty:
@@ -1247,13 +1240,15 @@ with tab_accum:
         m3.metric("🔴 疑似派发", n_sell)
 
         _bt_caption("主力吸筹")
-        clickable_table(
-            accum_df.drop(columns=["_reasons"]).style.format({
-                "量比": "{:.2f}", "CMF": "{:+.3f}", "涨跌量比": "{:.2f}",
-                "MFI": "{:.0f}", "OBV斜率": "{:+.4f}",
-            }, na_rep="—"),
-            width="stretch", hide_index=True, tickers=list(accum_df["代码"]), key="mom_acc", names=list(accum_df["股票"])
-        )
+        frame_table(accum_df, key="mom_acc", tickers=list(accum_df["代码"]), names=list(accum_df["股票"]), columns=[
+            {"key": "ticker_label", "label": "股票", "kind": "stock", "width": "minmax(120px,1.2fr)"},
+            {"key": "判定", "label": "判定", "kind": "text", "width": "96px"},
+            {"key": "评分", "label": "评分", "kind": "num", "decimals": 0, "width": "52px", "align": "right", "sortable": True, "sign": True, "color": True},
+            {"key": "量比", "label": "量比", "kind": "num", "decimals": 2, "width": "62px", "align": "right", "sortable": True, "suffix": "×", "hot": 2}, {"key": "CMF", "label": "CMF", "kind": "num", "decimals": 3, "width": "70px", "align": "right", "sortable": True, "sign": True, "color": True},
+            {"key": "涨跌量比", "label": "涨跌量比", "kind": "num", "decimals": 2, "width": "72px", "align": "right", "sortable": True}, {"key": "MFI", "label": "MFI", "kind": "num", "decimals": 0, "width": "52px", "align": "right", "sortable": True},
+            {"key": "OBV斜率", "label": "OBV斜率", "kind": "num", "decimals": 4, "width": "84px", "align": "right", "sortable": True, "sign": True, "color": True},
+            {"key": "放量突破", "label": "放量突破", "kind": "text", "width": "68px"},
+        ], sort="评分", min_width=880)
 
         st.caption("**评分逻辑**：CMF>0.05 +2 / OBV上行 +1 / 涨跌量比>1.2 +1 / "
                    "放量上涨 +1 / 放量突破新高 +2 / MFI<20 +1；反向对称扣分。"
@@ -1496,24 +1491,15 @@ with tab_momentum:
     detail["ret_20d"] = detail["ret_20d"] * 100
     detail["vol_30d"] = detail["vol_30d"] * 100
     _bt_caption("综合动量")
-    clickable_table(
-        detail.rename(columns={
-            "label": "股票", "composite": "综合", "heat": "短期热度",
-            "trend_z": "中期趋势", "trend_6_1": "6-1月收益%", "ret_20d": "20日收益%",
-            "vol_30d": "年化波动%", "latest_date": "数据日期",
-        }),
-        column_config={
-            "综合": st.column_config.NumberColumn(format="%+.2f"),
-            "短期热度": st.column_config.NumberColumn(format="%+.2f", help="组合内 z 分，按波动率调整"),
-            "中期趋势": st.column_config.NumberColumn(format="%+.2f",
-                                                  help="组合内 z 分；上市不足约 7 个月为空，此时综合只用短期热度"),
-            "6-1月收益%": st.column_config.NumberColumn(format="%+.1f%%"),
-            "20日收益%": st.column_config.NumberColumn(format="%+.1f%%"),
-            "年化波动%": st.column_config.NumberColumn(format="%.0f%%"),
-        },
-        width="stretch", hide_index=True,
-        height=min(560, 80 + len(detail) * 35), tickers=list(df["ticker"]), key="mom_detail", names=list(df["display"])
-    )
+    frame_table(detail, key="mom_detail", tickers=list(df["ticker"]), names=list(df["display"]),
+        subs=[str(x) for x in detail["label"]], columns=[
+        {"key": "ticker_label", "label": "股票", "kind": "stock", "width": "minmax(150px,1.5fr)"},
+        {"key": "composite", "label": "综合", "kind": "num", "decimals": 2, "width": "66px", "align": "right", "sortable": True, "sign": True, "color": True},
+        {"key": "heat", "label": "短期热度", "kind": "num", "decimals": 2, "width": "74px", "align": "right", "sortable": True, "sign": True, "color": True},
+        {"key": "trend_z", "label": "中期趋势", "kind": "num", "decimals": 2, "width": "74px", "align": "right", "sortable": True, "sign": True, "color": True},
+        {"key": "trend_6_1", "label": "6-1月", "kind": "num", "decimals": 1, "width": "76px", "align": "right", "sortable": True, "suffix": "%", "sign": True, "color": True}, {"key": "ret_20d", "label": "20日", "kind": "num", "decimals": 1, "width": "76px", "align": "right", "sortable": True, "suffix": "%", "sign": True, "color": True}, {"key": "vol_30d", "label": "年化波动", "kind": "num", "decimals": 0, "width": "76px", "align": "right", "sortable": True, "suffix": "%"},
+        {"key": "latest_date", "label": "数据日期", "kind": "text", "width": "92px"},
+    ], sort="composite", min_width=860)
 
     # 预警提示
     warn_df = df[df["composite"] < threshold]

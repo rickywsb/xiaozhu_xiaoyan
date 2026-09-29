@@ -12,7 +12,8 @@ import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import config
-from core.stock_chart import clickable_table, click_hint
+from core.stock_chart import click_hint
+from core.ui import pz_table, pct
 from core.daily_momentum import (
     DEFAULT_DECAY, DEFAULT_WINDOW, PERIODS,
     score_ticker_list,
@@ -78,6 +79,28 @@ def _save_snapshot(df: pd.DataFrame):
 
 def _load_snapshot(path: Path) -> pd.DataFrame:
     return pd.read_csv(path)
+
+
+def _snap_table(snap: pd.DataFrame, key: str) -> None:
+    num = lambda v: None if v is None or v != v else float(v)
+    rows = [{"ticker": r["ticker"], "name": r.get("display", r["ticker"]),
+             "sub": r.get("display") if str(r.get("display", "")).upper() != r["ticker"] else "",
+             "rank": int(r["rank"]) if "rank" in snap and num(r.get("rank")) is not None else None,
+             "composite": num(r.get("composite")), "direction": r.get("direction", ""),
+             **{f"r{p}": (num(r.get(f"ret_{p}d")) * 100 if num(r.get(f"ret_{p}d")) is not None else None)
+                for p in (5, 20, 60)},
+             "last": num(r.get("latest_close"))} for _, r in snap.iterrows() if "ticker" in snap]
+    _p = lambda k, lab: {"key": k, "label": lab, "kind": "num", "decimals": 1, "sign": True, "color": True,
+                         "suffix": "%", "width": "72px", "sortable": True, "align": "right"}
+    pz_table(rows, [
+        {"key": "rank", "label": "排名", "kind": "num", "decimals": 0, "width": "52px", "sortable": True},
+        {"key": "ticker", "label": "股票", "kind": "stock", "width": "minmax(140px,1.5fr)"},
+        {"key": "composite", "label": "综合分", "kind": "num", "decimals": 2, "sign": True, "color": True,
+         "width": "76px", "sortable": True, "align": "right"},
+        {"key": "direction", "label": "方向", "kind": "text", "width": "44px"},
+        _p("r5", "5日"), _p("r20", "20日"), _p("r60", "60日"),
+        {"key": "last", "label": "最新价", "kind": "num", "decimals": 2, "width": "88px", "align": "right"},
+    ], key=key, sort="rank", desc=False, min_width=720)
 
 
 def _diff_snapshots(curr: pd.DataFrame, prev: pd.DataFrame,
@@ -277,20 +300,32 @@ with tab_scan:
 
     # ─ 明细表 ────────────────────────────────────────────────────────────────
     st.subheader("③ 明细排名表")
-    disp_cols = ["display", "ticker", "_type", "composite", "direction",
-                 "avg_r5", "avg_r20", "vol_30d", "drawdown_10d", "latest_close"]
-    disp_cols = [c for c in disp_cols if c in df.columns]
-    show = df[disp_cols].copy()
-    show.columns = [{"display":"名称","ticker":"Ticker","_type":"类型",
-                     "composite":"综合分","direction":"方向",
-                     "avg_r5":"5日均收益","avg_r20":"20日均收益",
-                     "vol_30d":"30日波动","drawdown_10d":"10日回撤",
-                     "latest_close":"最新价"}.get(c, c) for c in show.columns]
-    # 格式化百分比列
-    for col in ["5日均收益","20日均收益","30日波动","10日回撤"]:
-        if col in show.columns:
-            show[col] = show[col].map(lambda v: f"{v*100:+.2f}%" if pd.notna(v) else "N/A")
-    clickable_table(show, width="stretch", hide_index=True, tickers=list(df["ticker"]), key="wl_scan", names=list(df["display"]) if "display" in df else None)
+    from core import rating as _RT
+    _rt, _ = _RT.load_latest()
+    _score = dict(zip(_rt["ticker"], _rt["score"])) if not _rt.empty else {}
+    _num = lambda v: None if v is None or v != v else float(v)
+    rows = [{"ticker": r["ticker"], "name": r.get("display", r["ticker"]),
+             "sub": r.get("display") if str(r.get("display", "")).upper() != r["ticker"] else "",
+             "type": r.get("_type", ""), "score": int(_score[r["ticker"]]) if _num(_score.get(r["ticker"])) is not None else None,
+             "composite": _num(r.get("composite")), "direction": r.get("direction", ""),
+             "r5": pct(r.get("avg_r5")), "r20": pct(r.get("avg_r20")), "vol": pct(r.get("vol_30d")),
+             "dd": pct(r.get("drawdown_10d")), "last": _num(r.get("latest_close"))} for _, r in df.iterrows()]
+    _p = lambda k, lab, d=2: {"key": k, "label": lab, "kind": "num", "decimals": d, "sign": True, "color": True,
+                              "suffix": "%", "width": "80px", "sortable": True, "align": "right"}
+    pz_table(rows, [
+        {"key": "ticker", "label": "股票", "kind": "stock", "width": "minmax(130px,1.3fr)", "sortable": True},
+        {"key": "type", "label": "类型", "kind": "pill", "width": "60px"},
+        {"key": "score", "label": "评分", "kind": "score", "width": "64px", "sortable": True},
+        {"key": "composite", "label": "动量综合", "kind": "num", "decimals": 2, "sign": True, "color": True,
+         "width": "76px", "sortable": True, "align": "right"},
+        {"key": "direction", "label": "方向", "kind": "text", "width": "44px"},
+        _p("r5", "5日均收益", 2), _p("r20", "20日均收益", 2),
+        {"key": "vol", "label": "30日波动", "kind": "num", "decimals": 0, "suffix": "%", "width": "72px",
+         "sortable": True, "align": "right"},
+        _p("dd", "10日回撤", 1),
+        {"key": "last", "label": "最新价", "kind": "num", "decimals": 2, "width": "88px", "align": "right"},
+    ], key="wl_scan", sort="composite", min_width=960)
+    st.caption("评分 = 全市场综合评分（≥90 为强势筛选）；动量综合 = 关注列表内的相对排名。")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -318,7 +353,7 @@ with tab_track:
     elif len(snap_files) == 1:
         st.info(f"只有一份快照（{snap_files[0].stem}），再次运行并保存后可比较变化。")
         curr_snap = _load_snapshot(snap_files[0])
-        clickable_table(curr_snap, width="stretch", hide_index=True, tickers=list(curr_snap["ticker"]) if "ticker" in curr_snap else [], key="wl_snap")
+        _snap_table(curr_snap, "wl_snap")
     else:
         snap_names = [f.stem for f in snap_files]
         col_a, col_b = st.columns(2)
@@ -374,10 +409,21 @@ with tab_track:
 
             # 完整对比表
             with st.expander("📋 完整对比表"):
-                show_diff = diff[["rank_curr", "display", "ticker", "排名变化",
-                                  "composite", "direction"]].copy()
-                show_diff.columns = ["当前排名", "名称", "Ticker", "排名变化", "综合分", "方向"]
-                clickable_table(show_diff, width="stretch", hide_index=True, tickers=list(diff["ticker"]), key="wl_diff", names=list(diff["display"]))
+                rows = [{"ticker": r["ticker"], "name": r["display"],
+                         "sub": r["display"] if str(r["display"]).upper() != r["ticker"] else "",
+                         "rank": int(r["rank_curr"]), "chg_txt": r["排名变化"],
+                         "rank_change": None if r["rank_change"] != r["rank_change"] else float(r["rank_change"]),
+                         "composite": None if r["composite"] != r["composite"] else float(r["composite"]),
+                         "direction": r["direction"]} for _, r in diff.iterrows()]
+                pz_table(rows, [
+                    {"key": "rank", "label": "当前排名", "kind": "num", "decimals": 0, "width": "72px", "sortable": True},
+                    {"key": "ticker", "label": "股票", "kind": "stock", "width": "minmax(140px,1.5fr)"},
+                    {"key": "chg_txt", "label": "排名变化", "kind": "text", "width": "84px", "sortKey": "rank_change",
+                     "sortable": True},
+                    {"key": "composite", "label": "综合分", "kind": "num", "decimals": 2, "sign": True, "color": True,
+                     "width": "76px", "sortable": True, "align": "right"},
+                    {"key": "direction", "label": "方向", "kind": "text", "width": "44px"},
+                ], key="wl_diff", sort="rank", desc=False, min_width=520)
 
         # 历史快照列表
         with st.expander("🗂 历史快照文件"):

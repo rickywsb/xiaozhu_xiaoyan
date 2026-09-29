@@ -12,7 +12,8 @@ import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import config
-from core.stock_chart import clickable_table, click_hint
+from core.stock_chart import click_hint
+from core.ui import pz_table, _clean
 from core.price_updater import load_cache, update_all_prices
 from core.github_storage import sync_to_github
 from core.value_history import append_value, load_history, HISTORY_PATH
@@ -317,23 +318,31 @@ with tab_view:
     disp = disp.copy()
     disp["量能"] = disp.apply(_ema_cell, axis=1)
 
-    clickable_table(
-        disp[["股票", "板块", "量能", "持股数", "现价 USD", "市值 USD", "涨跌%", "日变化 USD", "占比", "货币", "备注"]],
-        column_config={
-            "量能": st.column_config.TextColumn(
-                "量能", help="EMA10/20/60 趋势打分 0-100；🟢≥70 / 🟡40-69 / 🔴<40（点「量能健康」页看详情）"),
-            "现价 USD": st.column_config.NumberColumn("现价 USD", format="$%.2f"),
-            "市值 USD": st.column_config.NumberColumn("市值 USD", format="$%,.0f"),
-            "涨跌%":    st.column_config.NumberColumn("当日涨跌%", format="%+.2f%%"),
-            "日变化 USD": st.column_config.NumberColumn("日变化 USD", format="$%+,.0f"),
-            "占比":     st.column_config.ProgressColumn(
-                "占比", format="%.1f%%", min_value=0,
-                max_value=float(disp["占比"].max(skipna=True)),  # already in %
-            ),
-            "持股数":   st.column_config.NumberColumn("持股数", format="%.4g"),
-        },
-        width="stretch", hide_index=True, height=500, tickers=[_row_ticker(k) for k in disp["_key"]], key="pf_hold", names=list(disp["股票"])
-    )
+    mx = float(disp["占比"].max(skipna=True) or 1)
+    rows = []
+    for _, r in disp.iterrows():
+        cur = r.get("货币") or ""
+        rows.append({
+            "ticker": _row_ticker(r["_key"]), "name": r["股票"], "ticker_label": r["股票"],
+            "sub": " · ".join(x for x in [r["板块"], cur if cur and cur != "USD" else "", r.get("备注") or ""] if x),
+            "ema": r["量能"] or "", "shares": _clean(r["持股数"]), "price": _clean(r["现价 USD"]),
+            "value": _clean(r["市值 USD"]), "chg": _clean(r["涨跌%"]), "dchg": _clean(r["日变化 USD"]),
+            "w": _clean(r["占比"]),
+        })
+    pz_table(rows, [
+        {"key": "ticker_label", "label": "持仓", "kind": "stock", "width": "minmax(150px,1.5fr)", "sortable": True},
+        {"key": "ema", "label": "EMA 量能", "kind": "text", "width": "76px"},
+        {"key": "shares", "label": "持股数", "kind": "num", "decimals": 2, "width": "88px", "align": "right"},
+        {"key": "price", "label": "现价", "kind": "num", "decimals": 2, "prefix": "$", "width": "92px", "align": "right"},
+        {"key": "value", "label": "市值", "kind": "num", "decimals": 0, "prefix": "$", "width": "96px",
+         "sortable": True, "align": "right"},
+        {"key": "chg", "label": "当日", "kind": "num", "decimals": 2, "sign": True, "color": True, "suffix": "%",
+         "width": "72px", "sortable": True, "align": "right"},
+        {"key": "dchg", "label": "日变化", "kind": "num", "decimals": 0, "prefix": "$", "sign": True, "color": True,
+         "width": "84px", "sortable": True, "align": "right"},
+        {"key": "w", "label": "占比", "kind": "bar", "max": mx, "decimals": 1, "suffix": "%", "labelW": 40,
+         "barColor": "#1C4F7A", "width": "140px", "sortable": True},
+    ], key="pf_hold", sort="value", min_width=960)
     if snapshots.latest_prior_snapshot() is None:
         st.caption("ℹ️ 当日涨跌需至少两天快照对比；今天是首次记录，明天更新后即可显示。")
 

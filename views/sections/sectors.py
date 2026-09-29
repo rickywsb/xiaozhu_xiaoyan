@@ -10,10 +10,11 @@ import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import config
-from core.stock_chart import clickable_table, click_hint
+from core.stock_chart import click_hint
 from core import sectors as sc
 from core.daily_momentum import score_ticker_list
 from core import watchlist
+from core.ui import pz_table, _clean
 
 click_hint()
 st.caption(
@@ -109,28 +110,27 @@ with tab_rank:
         v = int(v)
         return f"↑{v}" if v > 0 else (f"↓{-v}" if v < 0 else "→")
 
-    show["5日排名变化"] = show["rank_chg"].apply(_chg)
-    for c in ("ret_1d", "ret_5d", "ret_20d", "ret_60d", "rs_60d"):
-        show[c] = show[c].apply(_pct)
-    clickable_table(
-        show[["rank", "5日排名变化", "name", "key", "group", "composite", "direction",
-              "ret_1d", "ret_5d", "ret_20d", "ret_60d", "rs_60d", "quadrant"]].rename(columns={
-            "rank": "排名", "name": "板块", "key": "代码", "group": "分组", "composite": "综合",
-            "direction": "方向", "ret_1d": "1日%", "ret_5d": "5日%", "ret_20d": "20日%",
-            "ret_60d": "60日%", "rs_60d": "vs SPY 60日%", "quadrant": "象限",
-        }),
-        column_config={
-            "综合": st.column_config.NumberColumn(format="%+.2f", help="板块间 z 分，越高越强"),
-            "1日%": st.column_config.NumberColumn(format="%+.1f%%"),
-            "5日%": st.column_config.NumberColumn(format="%+.1f%%"),
-            "20日%": st.column_config.NumberColumn(format="%+.1f%%"),
-            "60日%": st.column_config.NumberColumn(format="%+.1f%%"),
-            "vs SPY 60日%": st.column_config.NumberColumn(format="%+.1f%%",
-                                                         help="板块 60 日收益 − SPY 60 日收益"),
-        },
-        width="stretch", hide_index=True,
-        height=min(860, 80 + len(show) * 35), tickers=[k if g != "自定义" else None for k, g in zip(show["key"], show["group"])], key="sec_rank", names=list(show["name"])
-    )
+    rows = [{
+        "ticker": r["key"] if r["group"] != "自定义" else None, "name": r["name"], "ticker_label": r["name"],
+        "sub": f'{r["key"]} · {r["group"]}' if r["key"] != r["name"] else r["group"],
+        "rank": int(r["rank"]), "chg_txt": _chg(r["rank_chg"]), "rank_chg": _clean(r["rank_chg"]),
+        "composite": _clean(r["composite"]), "direction": r["direction"],
+        "ret_1d": _pct(r["ret_1d"]), "ret_5d": _pct(r["ret_5d"]), "ret_20d": _pct(r["ret_20d"]),
+        "ret_60d": _pct(r["ret_60d"]), "rs_60d": _pct(r["rs_60d"]), "quadrant": r["quadrant"],
+    } for _, r in show.iterrows()]
+    _p = lambda k, lab, w="70px": {"key": k, "label": lab, "kind": "num", "decimals": 1, "sign": True, "color": True,
+                                  "suffix": "%", "width": w, "sortable": True, "align": "right"}
+    pz_table(rows, [
+        {"key": "rank", "label": "排名", "kind": "num", "decimals": 0, "width": "48px", "sortable": True},
+        {"key": "chg_txt", "label": "5日变化", "kind": "text", "width": "64px", "sortKey": "rank_chg", "sortable": True},
+        {"key": "ticker_label", "label": "板块", "kind": "stock", "width": "minmax(120px,1.3fr)"},
+        {"key": "composite", "label": "综合", "kind": "num", "decimals": 2, "sign": True, "color": True,
+         "width": "64px", "sortable": True, "align": "right"},
+        {"key": "direction", "label": "方向", "kind": "text", "width": "44px"},
+        _p("ret_1d", "1日"), _p("ret_5d", "5日"), _p("ret_20d", "20日"), _p("ret_60d", "60日"),
+        _p("rs_60d", "vs SPY 60日", "86px"),
+        {"key": "quadrant", "label": "象限", "kind": "pill", "width": "84px"},
+    ], key="sec_rank", sort="", min_width=1000)
     st.caption("5日排名变化：与 5 个交易日前（按历史价格倒推）相比；自定义篮子为成分等权日收益累乘，"
                "成分在 config.CUSTOM_BASKETS 中调整。")
 
@@ -241,24 +241,23 @@ with tab_breadth:
 
             br["判读"] = br.apply(_read, axis=1)
             br = br.sort_values("above_ma20", ascending=False)
-            for c in ("above_ma20", "above_ma50", "new_high20", "ret_20d"):
-                br[c] = br[c].apply(_pct)
-            clickable_table(
-                br[["判读", "name", "key", "group", "n", "above_ma20", "above_ma50", "new_high20",
-                    "ret_20d"]].rename(columns={
-                    "name": "板块", "key": "代码", "group": "分组", "n": "成分数",
-                    "above_ma20": "站上MA20", "above_ma50": "站上MA50",
-                    "new_high20": "创20日新高", "ret_20d": "板块20日%",
-                }),
-                column_config={
-                    "站上MA20": st.column_config.ProgressColumn(format="%.0f%%", min_value=0, max_value=100),
-                    "站上MA50": st.column_config.ProgressColumn(format="%.0f%%", min_value=0, max_value=100),
-                    "创20日新高": st.column_config.ProgressColumn(format="%.0f%%", min_value=0, max_value=100),
-                    "板块20日%": st.column_config.NumberColumn(format="%+.1f%%"),
-                },
-                width="stretch", hide_index=True,
-                height=min(860, 80 + len(br) * 35), tickers=[k if g in ("行业", "主题") else ("SPY" if k == "S&P 500" else None) for k, g in zip(br["key"], br["group"])], key="sec_breadth", names=list(br["name"])
-            )
+            rows = [{
+                "ticker": (r["key"] if r["group"] in ("行业", "主题") else ("SPY" if r["key"] == "S&P 500" else None)),
+                "name": r["name"], "ticker_label": r["name"],
+                "sub": f'{r["key"]} · {r["group"]} · {int(r["n"])} 只成分',
+                "read": r["判读"], "ma20": _pct(r["above_ma20"]), "ma50": _pct(r["above_ma50"]),
+                "hi20": _pct(r["new_high20"]), "ret_20d": _pct(r["ret_20d"]),
+            } for _, r in br.iterrows()]
+            pz_table(rows, [
+                {"key": "ticker_label", "label": "板块", "kind": "stock", "width": "minmax(150px,1.4fr)"},
+                {"key": "read", "label": "判读", "kind": "pill", "width": "110px"},
+                {"key": "ma20", "label": "站上 MA20", "kind": "bar", "suffix": "%", "width": "150px", "sortable": True},
+                {"key": "ma50", "label": "站上 MA50", "kind": "bar", "suffix": "%", "width": "150px", "sortable": True},
+                {"key": "hi20", "label": "创 20 日新高", "kind": "bar", "suffix": "%", "width": "150px", "sortable": True,
+                 "barColor": "#1C4F7A"},
+                {"key": "ret_20d", "label": "板块 20 日", "kind": "num", "decimals": 1, "sign": True, "color": True,
+                 "suffix": "%", "width": "84px", "sortable": True, "align": "right"},
+            ], key="sec_breadth", min_width=860)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 板块下钻
@@ -274,28 +273,36 @@ with tab_drill:
         held = _holdings()
         watch = set(watchlist.load())
         mem = mem.copy()
-        mem["标记"] = [("💼持仓 " if t.upper() in held else "") + ("⭐关注" if t.upper() in watch else "")
-                     for t in mem["ticker"]]
-        for c in ("ret_5d", "ret_20d", "trend_6_1"):
-            mem[c] = mem[c].apply(_pct)
-        clickable_table(
-            mem[["rank", "ticker", "display", "标记", "composite", "heat", "trend_z",
-                 "ret_5d", "ret_20d", "trend_6_1", "direction"]].rename(columns={
-                "rank": "排名", "ticker": "代码", "display": "名称", "composite": "综合",
-                "heat": "短期热度", "trend_z": "中期趋势", "ret_5d": "5日%", "ret_20d": "20日%",
-                "trend_6_1": "6-1月%", "direction": "方向",
-            }),
-            column_config={
-                "综合": st.column_config.NumberColumn(format="%+.2f", help="板块内相对排名"),
-                "短期热度": st.column_config.NumberColumn(format="%+.2f"),
-                "中期趋势": st.column_config.NumberColumn(format="%+.2f"),
-                "5日%": st.column_config.NumberColumn(format="%+.1f%%"),
-                "20日%": st.column_config.NumberColumn(format="%+.1f%%"),
-                "6-1月%": st.column_config.NumberColumn(format="%+.1f%%"),
-            },
-            width="stretch", hide_index=True,
-            height=min(700, 80 + len(mem) * 35), tickers=list(mem["ticker"]), key="sec_drill", names=list(mem["display"])
-        )
+        from core import rating as _RT
+        _rt, _ = _RT.load_latest()
+        _score = dict(zip(_rt["ticker"], _rt["score"])) if not _rt.empty else {}
+        _act = dict(zip(_rt["ticker"], _rt["action"])) if not _rt.empty else {}
+        rows = []
+        for _, r in mem.iterrows():
+            t = r["ticker"].upper()
+            tag = "持仓" if t in held else ("关注" if t in watch else "")
+            nm = r["display"]
+            rows.append({
+                "ticker": t, "name": nm, "rank": int(r["rank"]),
+                "sub": " · ".join(x for x in [nm if str(nm).upper() != t else "", tag] if x),
+                "score": int(_score[t]) if _clean(_score.get(t)) is not None else None,
+                "composite": _clean(r["composite"]), "heat": _clean(r["heat"]), "trend_z": _clean(r["trend_z"]),
+                "ret_5d": _pct(r["ret_5d"]), "ret_20d": _pct(r["ret_20d"]), "trend_6_1": _pct(r["trend_6_1"]),
+                "direction": r["direction"], "spark": [],
+            })
+        _z = lambda k, lab: {"key": k, "label": lab, "kind": "num", "decimals": 2, "sign": True, "color": True,
+                             "width": "72px", "sortable": True, "align": "right"}
+        _p = lambda k, lab: {"key": k, "label": lab, "kind": "num", "decimals": 1, "sign": True, "color": True,
+                             "suffix": "%", "width": "70px", "sortable": True, "align": "right"}
+        pz_table(rows, [
+            {"key": "rank", "label": "排名", "kind": "num", "decimals": 0, "width": "48px", "sortable": True},
+            {"key": "ticker", "label": "股票", "kind": "stock", "width": "minmax(140px,1.5fr)", "sortable": True},
+            {"key": "score", "label": "评分", "kind": "score", "width": "64px", "sortable": True},
+            _z("composite", "板块内综合"), _z("heat", "短期热度"), _z("trend_z", "中期趋势"),
+            _p("ret_5d", "5日"), _p("ret_20d", "20日"), _p("trend_6_1", "6-1月"),
+            {"key": "direction", "label": "方向", "kind": "text", "width": "44px"},
+        ], key="sec_drill", sort="", min_width=960)
+        st.caption("评分 = 全市场综合评分；板块内综合 / 短期热度 / 中期趋势为板块成分之间的相对 z 分。")
 
         # 一键加入关注列表
         candidates = [t for t in mem["ticker"] if t.upper() not in watch]
