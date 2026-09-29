@@ -69,6 +69,41 @@ def _context(ticker: str) -> dict:
     return out
 
 
+@st.cache_data(show_spinner=False, ttl=1800)
+def _signal_history(ticker: str, bars: int = 130) -> list[dict]:
+    """
+    近 bars 个交易日里 A / B 级信号的"首次出现"（与信号成绩单同一函数逐日重算）：
+    [{date, signal, grade, expect(+1 看多 / -1 看空)}]。
+    """
+    from core import signal_backtest as sbt
+    vm = _verdicts()
+    data = dm.fetch_ohlcv_histories([ticker], complete_bars_only=True).get(ticker)
+    if data is None or len(data) < sbt.WARMUP:
+        return []
+    out, prev = [], set()
+    start = max(sbt.WARMUP, len(data) - bars)
+    for i in range(start, len(data)):
+        sub = data.iloc[max(0, i + 1 - sbt.INPUT_BARS): i + 1]
+        cur = sbt._day_signals(sub)
+        for sig in cur - prev:
+            v = vm.get(sig, {})
+            if v.get("评级", "")[:1] in ("A", "B"):
+                out.append({"date": sub.index[-1].date().isoformat(), "signal": sig, "grade": v["评级"][0],
+                            "expect": 1 if v.get("预期") == "看多" else -1})
+        prev = cur
+    return out
+
+
+@st.cache_data(show_spinner=False, ttl=600)
+def _rating_row(ticker: str) -> dict | None:
+    from core import rating as RT
+    df, as_of = RT.load_latest()
+    if df.empty:
+        return None
+    r = df[df["ticker"] == ticker.upper()]
+    return {**r.iloc[0].to_dict(), "as_of": as_of} if not r.empty else None
+
+
 def _verdicts() -> dict:
     try:
         from core import signal_backtest as sbt
@@ -120,6 +155,42 @@ def _chart_dialog(ticker: str, name: str | None = None) -> None:
     title = f"{name}（{ticker}）" if name and name != ticker else ticker
     st.markdown(f"### {title}")
 
+    rr = _rating_row(ticker)
+    if rr:
+        from core import rating as RT
+        sc_ = int(rr["score"])
+        d5 = (sc_ - rr["score_5d"]) if rr.get("score_5d") == rr.get("score_5d") and rr.get("score_5d") is not None else None
+        bg = "#155E36" if sc_ >= 90 else "#2F8A57" if sc_ >= 70 else "#8A877E" if sc_ >= 50 else "#C7711F" if sc_ >= 30 else "#B3362A"
+        act_css = {"持有": ("#DDF0E4", "#1F6B3E"), "可关注": ("#DDF0E4", "#1F6B3E"), "注意": ("#FBEFD9", "#8A4B0A"),
+                   "等待": ("#ECEAE4", "#5E5B53"), "考虑减仓": ("#F7E0DC", "#8E2E22"), "回避": ("#F7E0DC", "#8E2E22")}
+        ab, af = act_css.get(rr["action"], ("#ECEAE4", "#5E5B53"))
+        tier = f"≥{RT.TOP_TIER} 强势筛选" if sc_ >= RT.TOP_TIER else "描述性排名"
+        c_l, c_r = st.columns([1, 1.6])
+        with c_l:
+            st.html(
+                f'<div style="background:#16181D;color:#F7F6F2;border-radius:14px;padding:16px 18px;display:flex;flex-direction:column;gap:8px">'
+                f'<span style="font-size:12px;color:#9A968C">综合评分 · 全市场百分位（{rr["as_of"]}）</span>'
+                f'<div style="display:flex;align-items:baseline;gap:10px"><span style="font-family:IBM Plex Mono,monospace;'
+                f'font-size:46px;font-weight:600;line-height:1;background:{bg};padding:2px 10px;border-radius:10px">{sc_}</span>'
+                + (f'<span style="font-size:14px;color:{"#6FBF8E" if d5 >= 0 else "#E8A84C"}">{d5:+.0f} 较 5 日前</span>' if d5 is not None else "")
+                + f'</div><div style="display:flex;gap:8px;align-items:center"><span style="font-size:13px;font-weight:700;padding:4px 12px;'
+                f'border-radius:999px;background:{ab};color:{af}">{rr["action"]}</span>'
+                f'<span style="font-size:12px;color:#C9C5BB">量能：{rr["volume_state"]} · {tier}</span></div></div>')
+        with c_r:
+            import plotly.graph_objects as go
+            comps = ["趋势", "量能", "板块", "健康"]
+            vals = [rr.get(f"c_{k}") or 0.0 for k in comps]
+            f2 = go.Figure(go.Bar(x=vals, y=comps, orientation="h", text=[f"{v:+.1f}" for v in vals],
+                                  textposition="outside", cliponaxis=False,
+                                  marker_color=["#2F8A57" if v >= 0 else "#C7711F" for v in vals]))
+            lim = max(10.0, max(abs(v) for v in vals) * 1.4)
+            f2.update_layout(height=170, margin=dict(t=24, b=4, l=4, r=4), title=dict(text="评分构成（相对全市场均值）", font=dict(size=13)),
+                             xaxis=dict(range=[-lim, lim], zeroline=True, zerolinecolor="#8A877E", showgrid=False),
+                             yaxis=dict(autorange="reversed"), plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
+            st.plotly_chart(f2, width="stretch", config={"displayModeBar": False})
+    else:
+        st.caption("该标的不在评分股票池（如杠杆产品），无综合评分。")
+
     c1, c2 = st.columns([2, 3])
     period = c1.radio("周期", list(_PERIODS), index=2, horizontal=True, key="dlg_period")
     ind = c2.columns(5)
@@ -137,6 +208,24 @@ def _chart_dialog(ticker: str, name: str | None = None) -> None:
 
     fig = build_candlestick_chart(ohlcv, ticker, mas=[5, 20, 60], show_volume=show_vol,
                                   show_rsi=show_rsi, show_macd=show_macd, show_bollinger=show_boll)
+    # A / B 级信号标记（近半年首次出现的位置）
+    show_sig = True
+    hist_sig = _signal_history(ticker) if show_sig else []
+    if hist_sig:
+        import plotly.graph_objects as go
+        dmap = {d.date().isoformat(): i for i, d in enumerate(ohlcv["Date"])}
+        for expect, sym, color, col, off in ((1, "triangle-up", "#1F7A45", "Low", 0.97), (-1, "triangle-down", "#B3362A", "High", 1.03)):
+            pts = [h for h in hist_sig if h["expect"] == expect and h["date"] in dmap]
+            if not pts:
+                continue
+            fig.add_trace(go.Scatter(
+                x=[ohlcv["Date"].iloc[dmap[h["date"]]] for h in pts],
+                y=[float(ohlcv[col].iloc[dmap[h["date"]]]) * off for h in pts],
+                mode="markers", marker=dict(symbol=sym, size=11, color=color, line=dict(width=1, color="white")),
+                name="A/B 看多信号" if expect > 0 else "A/B 看空信号",
+                text=[f'{h["date"]} {h["signal"]}（{h["grade"]}）' for h in pts],
+                hovertemplate="%{text}<extra></extra>"), row=1, col=1)
+
     if show_lv and ctx.get("levels"):
         lo, hi = float(ohlcv["Low"].min()), float(ohlcv["High"].max())
         pad = (hi - lo) * 0.15
@@ -146,6 +235,8 @@ def _chart_dialog(ticker: str, name: str | None = None) -> None:
                               annotation_text=f"{label} {price:,.2f}", annotation_position="top left",
                               annotation_font_size=10, row=1, col=1)
     st.plotly_chart(fig, width="stretch")
+    if hist_sig:
+        st.caption(f"▲ / ▼ = 近半年 A / B 级信号首次出现的位置（共 {len(hist_sig)} 次，悬停看信号名）。")
 
     if ctx:
         m = st.columns(4)
@@ -156,11 +247,25 @@ def _chart_dialog(ticker: str, name: str | None = None) -> None:
         m[3].metric("关键价位数", len(ctx.get("levels", [])))
 
         verdicts = _verdicts()
-        rows = [{"信号": k, "当前状态": v, "该信号历史表现": (verdicts.get(sig, {}).get("判定") if sig else "—") or "—"}
-                for k, v, sig in _signal_rows(ctx)]
+        order = {"A": 0, "B": 1, "D": 2, "C": 3}
+        rows = []
+        for k, v, sig in _signal_rows(ctx):
+            vv = verdicts.get(sig, {}) if sig else {}
+            g = (vv.get("评级") or "")[:1]
+            ex = vv.get("20日平均超额%")
+            rows.append({"评级": g or "—", "信号": k, "当前状态": v,
+                         "历史20日超额": f"{ex:+.1f}%" if ex is not None else "—", "_o": order.get(g, 4)})
         if rows:
-            st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
-            st.caption("历史表现来自量能健康页的📐信号成绩单；「—」表示当前没有触发可检验的信号。")
+            sd = pd.DataFrame(rows).sort_values("_o")
+            main, rest = sd[sd["_o"] <= 2].drop(columns="_o"), sd[sd["_o"] > 2].drop(columns="_o")
+            st.markdown("**当前信号**（按评级排序：A 可靠 / B 参考 / D 反向提示）")
+            if main.empty:
+                st.caption("当前没有触发 A / B / D 级信号。")
+            else:
+                st.dataframe(main, hide_index=True, width="stretch", height=38 + 35 * len(main))
+            if not rest.empty:
+                with st.expander(f"其余 {len(rest)} 条（C 噪音或当前未触发可检验信号）"):
+                    st.dataframe(rest, hide_index=True, width="stretch", height=38 + 35 * len(rest))
 
     from core import watchlist
     t_up = ticker.upper()

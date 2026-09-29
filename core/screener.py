@@ -159,6 +159,10 @@ def scan(universe: pd.DataFrame, chunk: int = 100) -> pd.DataFrame:
 # ─── 预设策略 ─────────────────────────────────────────────────────────────────
 
 PRESETS: dict[str, dict] = {
+    "🏆 评分 ≥90": {
+        "desc": "综合评分（全市场百分位）≥90 的强势股——历史检验唯一稳定跑赢的区间",
+        "rule": lambda d: d["score"].fillna(0) >= 90,
+    },
     "🚀 新高突破": {
         "desc": "距 52 周高 ≤3%，今日放量（量比 ≥1.5），站上 MA50",
         "rule": lambda d: (d["dist_high52"] >= -0.03) & (d["vol_ratio"] >= 1.5) & d["above_ma50"],

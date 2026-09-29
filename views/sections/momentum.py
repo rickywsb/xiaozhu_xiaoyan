@@ -1635,6 +1635,53 @@ with tab_momentum:
 # 信号成绩单 TAB （各信号的历史表现：出现后 5/20 日相对股票池的超额）
 # ═══════════════════════════════════════════════════════════════════════════════
 with tab_bt:
+    # ── 综合评分验证 ──
+    from core import rating as _RT
+    st.subheader("🏆 综合评分验证")
+    _val = _RT.load_validation()
+    cv1, cv2 = st.columns([4, 1])
+    if cv2.button("🔄 重新验证评分", width="stretch", help="下载约 540 只股票 2 年日线重算（约 1 分钟）"):
+        with st.spinner("正在重算全市场评分与验证…"):
+            _h, _w, _n = _RT._portfolio_sets()
+            _b = _RT.build(_h, _w)
+            _v = _RT.validate(_b)
+            _path = _RT.save_validation(_v, config.market_today().isoformat())
+            sync_to_github(_path, "data/rating_validation.json", "chore: update rating validation")
+            _val = _RT.load_validation()
+    if not _val:
+        cv1.info("尚未做评分验证，点右侧按钮。")
+    else:
+        _d = _val["deciles"]["综合"]
+        cv1.caption(f"上次验证：{_val['run_date']} ｜ 全市场 {_val['n_tickers']} 只 ｜ {_d['start']} → {_d['end']} ｜ "
+                    f"权重：{' / '.join(f'{k} {v:.0%}' for k, v in _val['weights'].items())} ｜ 持有期 {_val['horizon']} 日")
+        _tt = _val["top_tier"].get(f"≥{_RT.TOP_TIER}", {})
+        m1, m2, m3, m4 = st.columns(4)
+        if _tt:
+            m1.metric(f"≥{_RT.TOP_TIER} 分之后 20 日超额", f"{_tt['excess'] * 100:+.2f}%",
+                      f"t {_tt['t']:.2f} · 胜率 {_tt['hit']:.0%}", delta_color="off", delta_arrow="off")
+            m2.metric("前段 / 后段（%）", f"{_tt['h1'] * 100:+.1f} / {_tt['h2'] * 100:+.1f}",
+                      "两段都为正" if _tt["h1"] > 0 and _tt["h2"] > 0 else "两段不一致", delta_color="off", delta_arrow="off")
+        m3.metric("十分组排序（秩相关）", f"{_d['rho']:+.2f}", f"头尾差 {_d['spread'] * 100:+.2f}% · {_d['grade']}",
+                  delta_color="off", delta_arrow="off")
+        _lb = _val.get("labels", {})
+        if _lb:
+            m4.metric("「持有」之后 20 日超额", f"{_lb['持有']['excess'] * 100:+.2f}%" if "持有" in _lb else "—",
+                      " · ".join(f"{k} {_lb[k]['excess'] * 100:+.1f}%" for k in ("注意", "考虑减仓") if k in _lb),
+                      delta_color="off", delta_arrow="off")
+        _dec = pd.DataFrame({"组": [int(k) for k in _d["deciles"]], "超额": [v * 100 for v in _d["deciles"].values()]})
+        _fig = go.Figure(go.Bar(x=_dec["组"], y=_dec["超额"],
+                                marker_color=["#155E36" if g == 10 else ("#8A877E" if v >= 0 else "#C7711F")
+                                              for g, v in zip(_dec["组"], _dec["超额"])],
+                                text=[f"{v:+.1f}%" for v in _dec["超额"]], textposition="outside", cliponaxis=False))
+        _fig.update_layout(height=260, margin=dict(t=30, b=10, l=10, r=10),
+                           title=dict(text="按综合评分分十组：随后 20 日相对股票池平均的超额（第 10 组 = 最高分）", font=dict(size=13)),
+                           xaxis=dict(dtick=1, title=None), yaxis=dict(title="超额 %"),
+                           plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
+        st.plotly_chart(_fig, width="stretch")
+        st.caption("结论：超额集中在最高分那一组，其余各组没有稳定的高低排序——所以评分定位为**强势筛选**（≥90），"
+                   "90 分以下只作描述性排名；操作倾向方向正确但区分度弱，仅作状态提示。每周重跑，观察是否稳定。")
+    st.divider()
+
     st.subheader("📐 信号成绩单")
     st.caption(
         "把本页各套信号放回过去 ~1.5 年逐日重算（只用当日及以前数据），统计信号**首次出现**后 "

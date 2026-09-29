@@ -46,6 +46,9 @@ if c_btn.button("🔄 重新扫描", width="stretch"):
     _scan.clear()
     st.rerun()
 df = _scan(tuple(sorted(held)), tuple(sorted(watch)))
+from core import rating as _RT
+_rt, _ = _RT.load_latest()
+df = df.merge(_rt[["ticker", "score"]], on="ticker", how="left") if not _rt.empty else df.assign(score=None)
 if df.empty:
     st.error("扫描失败（行情或成分股列表获取失败），请稍后重试。")
     st.stop()
@@ -94,14 +97,15 @@ show["dollar_vol"] = show["dollar_vol"] / 1e6
 show["breakout20"] = show["breakout20"].map({True: "✅", False: ""})
 click_hint()
 clickable_table(
-    show[["ticker", "name", "标记", "sector_name", "quadrant", "rs", "ret_20d", "ret_63d", "trend_6_1",
+    show[["ticker", "name", "标记", "sector_name", "quadrant", "score", "rs", "ret_20d", "ret_63d", "trend_6_1",
           "dist_high52", "vol_ratio", "breakout20", "atr_pct", "dollar_vol", "last"]].rename(columns={
-        "ticker": "代码", "name": "名称", "sector_name": "板块", "quadrant": "板块象限", "rs": "RS",
+        "ticker": "代码", "name": "名称", "sector_name": "板块", "quadrant": "板块象限", "score": "评分", "rs": "RS",
         "ret_20d": "20日%", "ret_63d": "3月%", "trend_6_1": "6-1月%", "dist_high52": "距52周高%",
         "vol_ratio": "量比", "breakout20": "20日突破", "atr_pct": "ATR%", "dollar_vol": "成交额$M",
         "last": "收盘价",
     }),
     column_config={
+        "评分": st.column_config.NumberColumn(format="%d", help="综合评分：全市场百分位（趋势/量能/板块/健康等权）；≥90 为强势筛选"),
         "RS": st.column_config.ProgressColumn(format="%d", min_value=1, max_value=99),
         "20日%": st.column_config.NumberColumn(format="%+.1f%%"),
         "3月%": st.column_config.NumberColumn(format="%+.1f%%"),

@@ -231,6 +231,33 @@ def _sector_block() -> dict:
         return {}
 
 
+def _rating_block() -> dict:
+    """市场状态（驾驶舱同口径）+ 持仓评分要点（≥90 强势 / 考虑减仓 / 5 日大幅变化）。"""
+    try:
+        from core import rating as RT, posture, sectors
+        df, as_of = RT.load_latest()
+        if df.empty:
+            return {}
+        post = posture.compute(df.attrs.get("breadth50"), sectors.sector_board())
+        names = {p["yf_ticker"].upper(): p.get("display", p["yf_ticker"])
+                 for a in pf.get("accounts", []) for p in a.get("positions", [])}
+        h = df[df["ticker"].isin(names)]
+        pick = lambda d: [{"ticker": r["ticker"], "评分": int(r["score"]), "5日变化": (int(r["score"] - r["score_5d"])
+                           if r["score_5d"] == r["score_5d"] else None), "操作倾向": r["action"]} for _, r in d.iterrows()]
+        return {
+            "口径": "评分=全市场约540只中的百分位（趋势/量能/板块/健康等权）；历史上只有≥90分稳定跑赢，90分以下仅作排名；"
+                    "操作倾向历史区分度弱，仅作状态提示",
+            "评分日期": as_of,
+            "市场状态": {"结论": post.get("headline"), "姿态": post.get("stance"),
+                       "分项": {k: round(v["score"]) for k, v in post.get("items", {}).items()}} if post else {},
+            "持仓≥90强势": pick(h[h["score"] >= RT.TOP_TIER]),
+            "持仓考虑减仓": pick(h[h["action"] == "考虑减仓"]),
+            "5日评分变化最大": pick(h.assign(_d=(h["score"] - h["score_5d"]).abs()).sort_values("_d", ascending=False).head(3)),
+        }
+    except Exception:
+        return {}
+
+
 def _news_block() -> list[dict]:
     out = []
     for theme in ("存储", "光通信", "半导体大盘"):
@@ -312,6 +339,7 @@ if run_full or run_skip:
         "量能": _momentum_block(pf, acc),
         "期权": _options_block(cache),
         "板块轮动": _sector_block(),
+        "市场状态与持仓评分": _rating_block(),
         "资讯": _news_block(),
     }
 
