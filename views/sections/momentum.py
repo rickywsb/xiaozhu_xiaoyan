@@ -1698,8 +1698,24 @@ with tab_bt:
                            xaxis=dict(dtick=1, title=None), yaxis=dict(title="超额 %"),
                            plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
         st.plotly_chart(_fig, width="stretch")
-        st.caption("结论：超额集中在最高分那一组，其余各组没有稳定的高低排序——所以评分定位为**强势筛选**（≥90），"
-                   "90 分以下只作描述性排名；操作倾向方向正确但区分度弱，仅作状态提示。每周重跑，观察是否稳定。")
+        # 各成分单独检验（同一份验证结果里的十分组）
+        _rows = []
+        for _k in ["综合", *[k for k in _val["weights"]]]:
+            _e = _val["deciles"].get(_k)
+            if not _e:
+                continue
+            _rows.append({"成分": "综合评分" if _k == "综合" else _k, "权重": "—" if _k == "综合" else f"{_val['weights'][_k]:.0%}",
+                          "评级": _e["grade"], "头尾差（20日）": f"{_e['spread'] * 100:+.2f}%",
+                          "t 值": f"{_e['t']:.2f}" if _e.get("t") is not None else "—", "排序秩相关": f"{_e['rho']:+.2f}",
+                          "前段 / 后段": f"{_e['h1'] * 100:+.1f}% / {_e['h2'] * 100:+.1f}%"})
+        st.markdown("**各成分单独检验**（每个成分自己分十组，看随后 20 日超额）")
+        st.dataframe(pd.DataFrame(_rows), hide_index=True, width="stretch")
+        st.caption("基本面 = SEC EDGAR 季度 EPS 同比、营收同比、EPS 同比加速（O'Neil CAN SLIM 的 C 与 A），季度结束 45 / 75 天后"
+                   "才计入，避免用到当时还没公布的财报；外国发行人 / 非美股无数据，按中性计。2026-10-02 加入后，"
+                   "同一份数据上综合评分十分组由 C（t 1.43）升到 B（t 1.98），≥90 档超额 +1.43% → +1.53%。"
+                   "单只股票的基本面贡献与最新季度增速：点任意股票打开个股详情，看「评分构成」。")
+        st.caption("定位不变：超额最集中在最高分那一组，评分仍作**强势筛选**（≥90）；90 分以下作排名参考。"
+                   "操作倾向方向正确但区分度弱，仅作状态提示。每周重跑，观察是否稳定。")
     st.divider()
 
     # ── 全市场信号实验室 ──
