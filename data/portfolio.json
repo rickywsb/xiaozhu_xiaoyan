@@ -16,7 +16,7 @@
         {
           "display": "MU",
           "yf_ticker": "MU",
-          "shares": 94.329,
+          "shares": 88.329,
           "sector": "存",
           "native_currency": "USD",
           "note": "6+7+6.32+32+4+42.009+1"
@@ -24,7 +24,7 @@
         {
           "display": "LITE",
           "yf_ticker": "LITE",
-          "shares": 18.0,
+          "shares": 17.0,
           "sector": "光",
           "native_currency": "USD",
           "note": ""
@@ -72,7 +72,7 @@
         {
           "display": "SNDK",
           "yf_ticker": "SNDK",
-          "shares": 20.0,
+          "shares": 18.0,
           "sector": "存",
           "native_currency": "USD",
           "note": "16+2+2"
@@ -128,7 +128,7 @@
         {
           "display": "Cash",
           "yf_ticker": "CASH",
-          "shares": 43000.0,
+          "shares": 55000.0,
           "sector": "现金",
           "native_currency": "USD",
           "note": ""
@@ -301,5 +301,5 @@
       "note": "None"
     }
   ],
-  "last_modified": "2026-09-29"
+  "last_modified": "2026-10-02"
 }
