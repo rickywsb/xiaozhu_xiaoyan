@@ -43,7 +43,7 @@ def chain(root: str) -> dict | None:
     """CBOE 期权链原始数据：{price, iv30, options: [...]}；失败返回 None。缓存 20 分钟。"""
     root = root.upper()
     hit = _chains.get(root)
-    if hit and time.time() - hit[0] < _CHAIN_TTL:
+    if hit and time.time() - hit[0] < (_CHAIN_TTL if hit[1] else 60):     # 失败只缓存 1 分钟，避免限流后长时间空白
         return hit[1]
     out = None
     for host in ("cdn.cboe.com", "www.cboe.com"):

@@ -25,6 +25,7 @@ from core import signal_lab as SL
 from core import tracker as tk
 from core import risk as RK
 from core import volume as VOL
+from core import option_flow as OF
 from core import daily_momentum as dm
 from core.enrich import enrich
 from core.fx import get_fx_rates
@@ -328,7 +329,18 @@ def cockpit():
                            "chg": r["chg"],
                            # 降噪：只有历史检验有效（✅）的价位进主列表
                            "reliable": "✅" in vd})
-        order = {"卖点": 0, "评分骤降": 1, "放量": 2, "价位": 3}
+        # 期权异动：未经检验 → 只进低可靠度列表；后台每小时扫描一次并存快照，不阻塞驾驶舱
+        OF.run_background(held_t + watch, status)
+        fl = OF.latest()
+        if fl is not None and not fl.empty:
+            chg_of = dict(zip(board["ticker"], board["chg"]))
+            for r in fl[fl["tilt"] != ""].to_dict("records"):
+                if r["ticker"] in names:
+                    alerts.append({"ticker": r["ticker"], "type": "期权异动",
+                                   "detail": f"{r['tilt']}：异动净额 {r['net_unusual'] * 100:+.0f}% 当日权利金，"
+                                             f"P/C 量比 {r['pc_vol']:.2f}（未检验，见「期权 · 情绪与异动」）",
+                                   "chg": chg_of.get(r["ticker"]), "reliable": False})
+        order = {"卖点": 0, "评分骤降": 1, "放量": 2, "价位": 3, "期权异动": 4}
 
         def _merge(items: list[dict]) -> list[dict]:
             """同一只股票合并成一行：类型取最重要的，说明依次拼接。"""
@@ -351,7 +363,7 @@ def cockpit():
                    "价位：今日穿越或 ±1% 内的 Fib / 筹码价位，只列历史检验有效（✅）的。")
         pz_table(main, acols, key="home_alerts", empty="暂无需要关注的预警 👍", min_width=640)
         if rest:
-            with st.expander(f"低可靠度提醒 {len(rest)} 条（历史检验偏弱 / 反向 / 未检验的价位、关注股的 C/D 级放量）"):
+            with st.expander(f"低可靠度提醒 {len(rest)} 条（历史检验偏弱 / 反向 / 未检验的价位、关注股的 C/D 级放量、期权异动）"):
                 pz_table(rest, acols, key="home_alerts_rest", min_width=640)
 
         # ── 板块当日盈亏 ──

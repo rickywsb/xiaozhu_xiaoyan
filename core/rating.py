@@ -8,6 +8,8 @@
           近 25 日派发日数（跌 ≥0.2% 且量大于前一日，越少越好）
   板块 S  所属板块（SPDR 行业 / 主题 ETF / 自定义篮子）60 日相对 SPY 收益在板块间的百分位
   健康 H  EMA10/20/60 量能分（与量能健康页同口径）、距 20 日高点的回撤（以 ATR 计，越小越好）
+  基本面 F SEC EDGAR 季度 EPS 同比、营收同比、EPS 同比加速（O'Neil CAN SLIM 的 C 与 A；core.fundamentals，
+          按季度结束后 45 / 75 天才可用，避免前视；无数据的股票记中性）
 
 综合 = Σ 权重 × 成分，再取百分位 → 1–99。
 定位：**强势筛选**——历史检验显示超额集中在 ≥90 分（前 10%），90 分以下只作描述性排名，不代表好坏。
@@ -32,7 +34,9 @@ from core import daily_momentum as dm
 
 PERIOD = "2y"
 # 四项等权：回测样本（约 22 个独立期）太少，不据此挑"最优"权重，避免过拟合；每周重跑验证后再议
-WEIGHTS = {"趋势": 0.25, "量能": 0.25, "板块": 0.25, "健康": 0.25}
+# 2026-10-02 加入基本面：十分组检验由 C（t 1.42, ρ 0.52）升到 A（t 2.26, ρ 0.71），≥90 档超额 +1.40% → +1.49%
+WEIGHTS = {"趋势": 0.2, "量能": 0.2, "板块": 0.2, "健康": 0.2, "基本面": 0.2}
+FUND_MAX_AGE_DAYS = 7     # 基本面数据超过 7 天自动从 SEC 重新下载（失败则沿用旧文件）
 TOP_TIER = 90             # 强势筛选门槛：验证显示超额集中在前 10%
 HORIZON = 20
 RATING_PATH = config.DATA_DIR / "rating_latest.json"
@@ -129,8 +133,8 @@ def _pct(df: pd.DataFrame, valid: pd.DataFrame) -> pd.DataFrame:
 
 
 def components(feat: dict[str, pd.DataFrame], sector_of: dict[str, str | None],
-               sec_pct: pd.DataFrame) -> dict[str, pd.DataFrame]:
-    """四个成分（0–1，全市场横截面）。"""
+               sec_pct: pd.DataFrame, fund_q: pd.DataFrame | None = None) -> dict[str, pd.DataFrame]:
+    """五个成分（0–1，全市场横截面）。fund_q = core.fundamentals 的季度表（缺省则基本面记中性）。"""
     ok = feat["valid"]
     T = pd.concat([_pct(feat["rs"], ok), _pct(feat["dist_hi"], ok),
                    feat["above50"].where(ok), feat["above200"].where(ok)], keys=range(4)).groupby(level=1).mean()
@@ -141,7 +145,31 @@ def components(feat: dict[str, pd.DataFrame], sector_of: dict[str, str | None],
     sp = sec_pct.reindex(idx).ffill() if not sec_pct.empty else pd.DataFrame(index=idx)
     S = pd.DataFrame({t: sp[k] if (k and k in sp) else pd.Series(0.5, index=idx) for t, k in
                       ((t, sector_of.get(t)) for t in cols)}, index=idx).where(ok)
-    return {"趋势": T.reindex(idx), "量能": V.reindex(idx), "板块": S, "健康": H.reindex(idx)}
+    from core import fundamentals as FD
+    if fund_q is not None and not fund_q.empty:
+        F = FD.component(FD.factor_matrices(fund_q, idx, cols), ok)
+    else:
+        F = pd.DataFrame(0.5, index=idx, columns=cols).where(ok)
+    return {"趋势": T.reindex(idx), "量能": V.reindex(idx), "板块": S, "健康": H.reindex(idx), "基本面": F}
+
+
+def fundamentals_table(tickers: list[str]) -> pd.DataFrame:
+    """读 data/fundamentals.json；超过 FUND_MAX_AGE_DAYS 天则从 SEC 重新下载并同步 GitHub（失败沿用旧文件）。"""
+    from datetime import date
+    from core import fundamentals as FD
+    q, updated = FD.load()
+    stale = not updated or (date.today() - date.fromisoformat(updated)).days > FUND_MAX_AGE_DAYS
+    if stale:
+        try:
+            fresh = FD.download(tickers)
+            if len(fresh) > 0.5 * len(q):
+                q = fresh
+                path = FD.save(q)
+                from core.github_storage import sync_to_github
+                sync_to_github(path, "data/fundamentals.json", "chore: update SEC fundamentals")
+        except Exception:
+            pass
+    return q
 
 
 def composite(comp: dict[str, pd.DataFrame], weights: dict[str, float] = WEIGHTS) -> pd.DataFrame:
@@ -301,10 +329,11 @@ def build(holdings: set[str], watch: set[str], period: str = PERIOD, progress=No
     sector_of = dict(zip(uni["ticker"], uni["sector_key"]))
     sec_pct = sector_strength({k for k in sector_of.values() if k}, period)
     feat = features(panel)
-    comp = components(feat, sector_of, sec_pct)
+    fund_q = fundamentals_table(tickers)
+    comp = components(feat, sector_of, sec_pct, fund_q)
     score = composite(comp)
     return {"universe": uni, "panel": panel, "feat": feat, "comp": comp, "score": score,
-            "sector_of": sector_of, "sec_pct": sec_pct}
+            "sector_of": sector_of, "sec_pct": sec_pct, "fund_q": fund_q}
 
 
 # ─── 盘中预估 ─────────────────────────────────────────────────────────────────
@@ -361,7 +390,7 @@ def intraday(b: dict, bars: dict[str, dict], today: str, frac_us: float | None) 
     ratio = p2["close"].iloc[-1] / panel["close"].ffill().iloc[-1]
     p2["close_usd"] = pd.concat([cu, (cu.ffill().iloc[-1] * ratio).to_frame().T.set_axis([ts])])[cols]
     feat = features(p2)
-    comp = components(feat, b["sector_of"], b["sec_pct"])
+    comp = components(feat, b["sector_of"], b["sec_pct"], b.get("fund_q"))
     return {**b, "panel": p2, "feat": feat, "comp": comp, "score": composite(comp)}
 
 
@@ -406,6 +435,13 @@ def latest(b: dict, holdings: set[str], watch: set[str], names: dict[str, str] |
     vol_df = b["panel"]["volume"]
     vr5 = vol_df.tail(5).mean() / vol_df.shift(1).rolling(50).mean().iloc[-1]
     uni = b["universe"].set_index("ticker")
+    fund = {}
+    if b.get("fund_q") is not None and not b["fund_q"].empty:
+        from core import fundamentals as FD
+        fq = FD.quarterly_factors(b["fund_q"])
+        fq = fq[pd.to_datetime(fq["avail"]) <= d].sort_values("quarter").groupby("ticker").tail(1)
+        fund = {r.ticker: {"fund_q": r.quarter, "eps_yoy": r.eps_yoy, "rev_yoy": r.rev_yoy, "eps_accel": r.eps_accel}
+                for r in fq.itertuples()}
     rows = []
     for t in score.columns:
         s = score.at[d, t]
@@ -427,6 +463,7 @@ def latest(b: dict, holdings: set[str], watch: set[str], names: dict[str, str] |
             "vr": g("vr"), "ret1": g("ret1"), "ema_score": g("ema_score"),
             "above50": g("above50"), "dist25": g("dist25"),      # 保存以便按当前持仓 / 关注重算操作倾向
             "group": "持仓" if held else ("关注" if t in watch else ""),
+            **{k: (None if v is None or v != v else v) for k, v in fund.get(t, {}).items()},
         })
     df = pd.DataFrame(rows).sort_values("score", ascending=False).reset_index(drop=True)
     df.attrs["as_of"] = str(d.date())

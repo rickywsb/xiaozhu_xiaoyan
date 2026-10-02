@@ -178,16 +178,22 @@ def _chart_dialog(ticker: str, name: str | None = None) -> None:
                 f'<span style="font-size:12px;color:#C9C5BB">量能：{rr["volume_state"]} · {tier}</span></div></div>')
         with c_r:
             import plotly.graph_objects as go
-            comps = ["趋势", "量能", "板块", "健康"]
+            comps = [k for k in RT.WEIGHTS]
             vals = [rr.get(f"c_{k}") or 0.0 for k in comps]
             f2 = go.Figure(go.Bar(x=vals, y=comps, orientation="h", text=[f"{v:+.1f}" for v in vals],
                                   textposition="outside", cliponaxis=False,
                                   marker_color=["#2F8A57" if v >= 0 else "#C7711F" for v in vals]))
             lim = max(10.0, max(abs(v) for v in vals) * 1.4)
-            f2.update_layout(height=170, margin=dict(t=24, b=4, l=4, r=4), title=dict(text="评分构成（相对全市场均值）", font=dict(size=13)),
+            f2.update_layout(height=200, margin=dict(t=24, b=4, l=4, r=4), title=dict(text="评分构成（相对全市场均值）", font=dict(size=13)),
                              xaxis=dict(range=[-lim, lim], zeroline=True, zerolinecolor="#8A877E", showgrid=False),
                              yaxis=dict(autorange="reversed"), plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
             st.plotly_chart(f2, width="stretch", config={"displayModeBar": False})
+            if rr.get("fund_q"):
+                fx = lambda v: "—" if v is None or v != v else f"{v * 100:+.0f}%"
+                st.caption(f"基本面（SEC，{rr['fund_q']}）：EPS 同比 {fx(rr.get('eps_yoy'))} · 营收同比 {fx(rr.get('rev_yoy'))}"
+                           f" · EPS 同比加速 {fx(rr.get('eps_accel'))}")
+            else:
+                st.caption("基本面：无 SEC 季报数据（外国发行人 / 非美股），按中性计。")
     else:
         st.caption("该标的不在评分股票池（如杠杆产品），无综合评分。")
 
