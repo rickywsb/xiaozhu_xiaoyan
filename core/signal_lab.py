@@ -276,3 +276,32 @@ def main_signal_text(ticker: str, max_n: int = 1) -> str:
 def ticker_recent(ticker: str) -> list[dict]:
     """近 130 日该股票的 A / B 级信号事件（K 线标记用）。"""
     return [e for e in load_latest().get("recent", []) if e["ticker"] == ticker.upper()]
+
+
+# ─── 盘中预计 ─────────────────────────────────────────────────────────────────
+
+def intraday_signals(b: dict, spy: pd.Series) -> dict[str, list[dict]]:
+    """
+    b = core.rating.intraday() 的结果（最后一行是今天的盘中 K 线）。
+    返回今天「预计」首次触发的 A / B 级信号：{ticker: [{signal, grade, expect}]}，已做包含关系去重。
+    收盘后才算确认（盘中量是折算值、价格还会变）。
+    """
+    lab = load_summary()
+    if not lab:
+        return {}
+    grade = dict(zip(lab["summary"]["信号"], lab["summary"]["grade"]))
+    good = {n for n, g in grade.items() if str(g)[:1] in ("A", "B")}
+    masks = signal_masks(b["panel"], b["feat"], b["score"], spy)
+    last = b["score"].index[-1]
+    hits: dict[str, set[str]] = {}
+    for name in good & set(masks):
+        ev = onsets(masks[name])
+        row = ev.loc[last]
+        for t in row.index[row.fillna(False).to_numpy(dtype=bool)]:
+            hits.setdefault(t, set()).add(name)
+    out = {}
+    for t, names in hits.items():
+        hidden = set().union(*(SUBSUMES.get(n, set()) for n in names))
+        out[t] = sorted(({"signal": n, "grade": grade[n][:1], "expect": _EXPECT[n]} for n in names - hidden),
+                        key=lambda x: (x["grade"], x["expect"]))
+    return out

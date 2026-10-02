@@ -303,7 +303,66 @@ def build(holdings: set[str], watch: set[str], period: str = PERIOD, progress=No
     feat = features(panel)
     comp = components(feat, sector_of, sec_pct)
     score = composite(comp)
-    return {"universe": uni, "panel": panel, "feat": feat, "comp": comp, "score": score}
+    return {"universe": uni, "panel": panel, "feat": feat, "comp": comp, "score": score,
+            "sector_of": sector_of, "sec_pct": sec_pct}
+
+
+# ─── 盘中预估 ─────────────────────────────────────────────────────────────────
+
+INTRADAY_ROWS = 330        # 盘中重算只取最近 330 根（252 日窗口 + 余量），比全量快数倍
+
+
+def today_bars(tickers: list[str], chunk: int = 150) -> dict[str, dict]:
+    """全股票池最新一根日线（含盘中未收完的）：{ticker: {date, open, high, low, close, volume}}。"""
+    out: dict[str, dict] = {}
+    for i in range(0, len(tickers), chunk):
+        data = dm._download(tickers[i:i + chunk], period="5d", max_age=0)
+        for t, d in data.items():
+            if d is None or d.empty:
+                continue
+            r = d.iloc[-1]
+            out[t] = {"date": d.index[-1].date().isoformat(), "open": float(r.get("Open", r["Close"])),
+                      "high": float(r.get("High", r["Close"])), "low": float(r.get("Low", r["Close"])),
+                      "close": float(r["Close"]), "volume": float(r["Volume"]) if pd.notna(r.get("Volume")) else None}
+    return out
+
+
+def intraday(b: dict, bars: dict[str, dict], today: str, frac_us: float | None) -> dict | None:
+    """
+    在已收盘矩阵后追加「今天」这一行再重算评分（盘中预估）：
+      美股：今天的盘中 K 线，成交量按日内典型分布折算成全天（÷ frac_us）；
+      其他市场 / 当天没有 K 线的：今天已收完的 K 线照用，没有的沿用昨收（成交量记缺失）。
+    今天已在矩阵里（已收盘）时返回 None。返回与 build() 同结构的 dict（矩阵只含最近 INTRADAY_ROWS 行）。
+    """
+    panel = b["panel"]
+    ts = pd.Timestamp(today)
+    if ts in panel["close"].index or panel["close"].empty:
+        return None
+    frac = max(frac_us or 1.0, 0.05)
+    cols = panel["close"].columns
+    last_c = panel["close"].ffill().iloc[-1]
+    row = {f: {} for f in ("open", "high", "low", "close", "volume")}
+    for t in cols:
+        bar = bars.get(t)
+        if bar and bar["date"] == today:
+            for f in ("open", "high", "low", "close"):
+                row[f][t] = bar[f]
+            v = bar["volume"]
+            row["volume"][t] = (v / frac if "." not in t else v) if v else np.nan
+        else:
+            c = float(last_c.get(t, np.nan))
+            for f in ("open", "high", "low", "close"):
+                row[f][t] = c
+            row["volume"][t] = np.nan
+    p2 = {}
+    for f in ("open", "high", "low", "close", "volume"):
+        p2[f] = pd.concat([panel[f].tail(INTRADAY_ROWS), pd.DataFrame(row[f], index=[ts])])[cols]
+    cu = panel["close_usd"].tail(INTRADAY_ROWS)
+    ratio = p2["close"].iloc[-1] / panel["close"].ffill().iloc[-1]
+    p2["close_usd"] = pd.concat([cu, (cu.ffill().iloc[-1] * ratio).to_frame().T.set_axis([ts])])[cols]
+    feat = features(p2)
+    comp = components(feat, b["sector_of"], b["sec_pct"])
+    return {**b, "panel": p2, "feat": feat, "comp": comp, "score": composite(comp)}
 
 
 def validate(b: dict) -> dict:

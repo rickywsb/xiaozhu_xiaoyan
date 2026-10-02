@@ -1,14 +1,11 @@
-"""views/sections/10_Live.py — 📡 盘中看板：当日涨跌 / 当日盈亏 / 关键价位预警 + Day 0 追踪"""
+"""views/sections/live.py — Day 0 追踪（持仓页）。盘中看板已并入驾驶舱（home_overview.py）。"""
 
 import json
 import sys
-from datetime import datetime
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
 import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -16,7 +13,6 @@ import config
 from core.stock_chart import click_hint
 from core.ui import pz_table, pct, _clean
 from core import tracker as tk
-from core import signal_backtest as sbt
 from core.fx import get_fx_rates
 from core.github_storage import sync_to_github
 
@@ -86,157 +82,7 @@ _USD = lambda k, lab, w="84px": {"key": k, "label": lab, "kind": "num", "decimal
 status = tk.us_market_status()
 live = status == "交易中"
 
-# 由入口页决定渲染哪一块：SECTION = "live"（盘中，驾驶舱）/ "day0"（Day 0 追踪，持仓）
-_SECTION = globals().get("SECTION", "live")
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# 盘中
-# ═══════════════════════════════════════════════════════════════════════════════
-if _SECTION == "live":
-
-    @st.fragment(run_every=REFRESH_SECONDS if live else None)
-    def live_panel():
-        quotes = _quotes(tuple(uni))
-        now_et = datetime.now(ZoneInfo(config.MARKET_TZ)).strftime("%H:%M:%S")
-        c_stat, c_btn = st.columns([5, 1])
-        badge = {"交易中": "🟢 美股交易中", "盘前": "🟡 美股盘前", "已收盘": "⚪ 美股已收盘",
-                 "休市": "⚪ 美股休市"}[status]
-        c_stat.caption(
-            f"{badge} ｜ 更新于美东 {now_et}"
-            + (f" ｜ 每 {REFRESH_SECONDS} 秒自动刷新" if live else " ｜ 非交易时段，显示最近一个交易日的涨跌")
-            + " ｜ 行情来自 Yahoo，可能有数秒到数分钟延迟"
-        )
-        if c_btn.button("🔄 刷新", width="stretch"):
-            _quotes.clear()
-            st.rerun(scope="fragment")
-
-        if quotes.empty:
-            st.error("报价获取失败，请稍后刷新。")
-            return
-        board = tk.intraday_board(uni, quotes, _fx())
-        held = board[board["group"] == "持仓"]
-
-        # ── 顶部指标 ──
-        pnl = float(held["pnl_usd"].sum())
-        prev_val = float(held["prev_value_usd"].sum())
-        n_up, n_dn = int((held["chg"] > 0).sum()), int((held["chg"] < 0).sum())
-        cols = st.columns(5)
-        cols[0].metric("持仓当日盈亏（股票）", f"${pnl:+,.0f}",
-                       f"{pnl / prev_val * 100:+.2f}%" if prev_val else None)
-        cols[1].metric("持仓涨 / 跌", f"{n_up} / {n_dn}")
-        for col, b in zip(cols[2:], tk.BENCHMARKS):
-            r = board[board["ticker"] == b]
-            if not r.empty:
-                col.metric(b, f"{r.iloc[0]['last']:,.2f}", f"{r.iloc[0]['chg'] * 100:+.2f}%")
-
-        # ── 板块盈亏 ──
-        sp = tk.sector_pnl(board)
-        if not sp.empty:
-            fig = go.Figure(go.Bar(
-                x=sp["pnl_usd"], y=sp["sector"], orientation="h",
-                marker_color=[_GREEN if v >= 0 else _RED for v in sp["pnl_usd"]],
-                text=[f"${v:+,.0f}（{c * 100:+.2f}%）" for v, c in zip(sp["pnl_usd"], sp["chg"])],
-                textposition="outside", cliponaxis=False,
-                hovertemplate="%{y}: $%{x:+,.0f}<extra></extra>",
-            ))
-            # 两侧留出标签空间：正值标签在右、负值标签在左
-            lo, hi = min(0.0, float(sp["pnl_usd"].min())), max(0.0, float(sp["pnl_usd"].max()))
-            pad = (hi - lo) * 0.45 or 1.0
-            fig.update_layout(title="持仓板块当日盈亏", height=60 + 42 * len(sp),
-                              margin=dict(t=40, b=10, l=10, r=10),
-                              xaxis=dict(range=[lo - (pad if lo < 0 else 0), hi + pad]),
-                              yaxis=dict(autorange="reversed"),
-                              plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
-            st.plotly_chart(fig, width="stretch")
-
-        # ── 涨跌榜 ──
-        stocks = board[board["group"] != "基准"]
-        cL, cR = st.columns(2)
-        for col, title, part in [(cL, "🟢 涨幅榜", stocks.head(8)),
-                                 (cR, "🔴 跌幅榜", stocks.tail(8).iloc[::-1])]:
-            with col:
-                st.markdown(f"**{title}**")
-                rows = [{"ticker": r["ticker"], "name": r["name"], "sub": _sub(r["name"], r["ticker"], r["group"]),
-                         "chg": pct(r["chg"]), "pnl": _clean(r["pnl_usd"])} for _, r in part.iterrows()]
-                pz_table(rows, [
-                    {"key": "ticker", "label": "股票", "kind": "stock", "width": "minmax(110px,1fr)"},
-                    _PCT("chg", "当日"), _USD("pnl", "盈亏"),
-                ], key=f"live_mv_{title}", min_width=360)
-
-        # ── 盘中放量 ──
-        res_bt = sbt.load_result()
-        vm_bt = sbt.verdict_map(res_bt["summary"]) if res_bt else {}
-        va, vnote = tk.volume_alerts(board[board["group"] != "基准"], status,
-                                     datetime.now(ZoneInfo(config.MARKET_TZ)), vm_bt)
-        st.markdown("**📢 放量预警**（预计全天量比 ≥1.5）")
-        st.caption(vnote + "。信号后括号为📐信号成绩单评级：A 可靠 / B 参考 / C 噪音 / D 反向。")
-        if va.empty:
-            if "分钟内" not in vnote:
-                st.caption("暂无明显放量。")
-        else:
-            def _sig(r) -> str:
-                # 部分行无信号 / 无评级时 pandas 存为 NaN（真值为 True），只认字符串
-                s = r["signal"] if isinstance(r["signal"], str) else ""
-                g = r["grade"] if isinstance(r["grade"], str) and r["grade"] else ""
-                return f"{s}（{g[0]}）" if s and g else s
-
-            rows = [{"ticker": r["ticker"], "name": r["name"], "sub": _sub(r["name"], r["ticker"], r["group"]),
-                     "pvr": _clean(r["pvr"]), "chg": pct(r["chg"]), "brk": "突破 20 日高" if r["breakout"] else "",
-                     "sig": _sig(r)}
-                    for _, r in va.iterrows()]
-            pz_table(rows, [
-                {"key": "ticker", "label": "股票", "kind": "stock", "width": "minmax(130px,1.2fr)"},
-                {"key": "pvr", "label": "预计量比", "kind": "num", "suffix": "×", "hot": 2, "width": "84px",
-                 "sortable": True, "align": "right"},
-                _PCT("chg", "当日"),
-                {"key": "brk", "label": "突破", "kind": "text", "colors": {"突破 20 日高": "#1F6B3E"}, "width": "96px"},
-                {"key": "sig", "label": "预计信号（评级）", "kind": "small", "width": "minmax(140px,1.5fr)"},
-            ], key="live_vol", sort="pvr", min_width=640)
-
-        # ── 关键价位预警（持仓）──
-        st.markdown("**🎯 关键价位预警**（持仓：今日穿越或距离 ±1% 以内的 Fib / 筹码价位）")
-        lv = _levels(tuple(held["ticker"]))
-        res = sbt.load_result()
-        alerts = tk.level_alerts(held, lv, sbt.verdict_map(res["summary"]) if res else {})
-        if alerts.empty:
-            st.caption("暂无持仓接近关键价位。")
-        else:
-            rows = [{"ticker": r["ticker"], "name": r["name"], "sub": _sub(r["name"], r["ticker"]),
-                     "event": r["event"], "kind": r["kind"], "level": _clean(r["level"]), "last": _clean(r["last"]),
-                     "dist": pct(r["dist"]), "chg": pct(r["chg"]), "verdict": r["verdict"] or ""}
-                    for _, r in alerts.iterrows()]
-            pz_table(rows, [
-                {"key": "ticker", "label": "股票", "kind": "stock", "width": "minmax(120px,1.1fr)"},
-                {"key": "event", "label": "事件", "kind": "text", "width": "minmax(110px,1fr)",
-                 "colors": {}},
-                {"key": "kind", "label": "类型", "kind": "text", "width": "52px"},
-                {"key": "level", "label": "价位", "kind": "num", "decimals": 2, "width": "90px", "align": "right"},
-                {"key": "last", "label": "现价", "kind": "num", "decimals": 2, "width": "90px", "align": "right"},
-                _PCT("dist", "距价位", "76px", 1), _PCT("chg", "当日"),
-                {"key": "verdict", "label": "该类信号历史", "kind": "pill", "width": "96px"},
-            ], key="live_alerts", min_width=820)
-            st.caption("价位按截至昨日的日线计算（本币）；「该类信号历史表现」来自量能健康页的📐信号成绩单，"
-                       "❌/🟡 表示这类信号过去并不可靠。")
-
-        # ── 全部 ──
-        with st.expander(f"📋 全部 {len(board)} 只（持仓 + 关注 + 基准）"):
-            rows = [{"ticker": r["ticker"], "name": r["name"], "sub": _sub(r["name"], r["ticker"], r["sector"]),
-                     "group": r["group"], "price_txt": f"{r['last']:,.2f}", "chg": pct(r["chg"]),
-                     "prev": _clean(r["prev_close"]), "pnl": _clean(r["pnl_usd"]), "bar_date": r["bar_date"]}
-                    for _, r in board.iterrows()]
-            pz_table(rows, [
-                {"key": "ticker", "label": "股票", "kind": "stock", "width": "minmax(130px,1.3fr)", "sortable": True},
-                {"key": "group", "label": "分组", "kind": "pill", "width": "60px"},
-                {"key": "price_txt", "label": "最新 · 当日", "kind": "price", "chg": "chg", "width": "110px",
-                 "sortable": True, "sortKey": "chg"},
-                {"key": "prev", "label": "昨收", "kind": "num", "decimals": 2, "width": "96px", "align": "right"},
-                _USD("pnl", "盈亏"),
-                {"key": "bar_date", "label": "K 线日期", "kind": "text", "width": "96px"},
-            ], key="live_all", sort="chg", min_width=720)
-            st.caption("最新价 / 昨收为本币；盈亏按最新汇率折美元。期权与现金不在此计算。"
-                       "K线日期早于其他股票的，多为当地休市（如韩国中秋）。")
-
-    live_panel()
+_SECTION = globals().get("SECTION", "day0")
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Day 0 追踪
