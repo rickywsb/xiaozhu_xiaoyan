@@ -174,9 +174,15 @@ if _SECTION == "live":
             if "分钟内" not in vnote:
                 st.caption("暂无明显放量。")
         else:
+            def _sig(r) -> str:
+                # 部分行无信号 / 无评级时 pandas 存为 NaN（真值为 True），只认字符串
+                s = r["signal"] if isinstance(r["signal"], str) else ""
+                g = r["grade"] if isinstance(r["grade"], str) and r["grade"] else ""
+                return f"{s}（{g[0]}）" if s and g else s
+
             rows = [{"ticker": r["ticker"], "name": r["name"], "sub": _sub(r["name"], r["ticker"], r["group"]),
                      "pvr": _clean(r["pvr"]), "chg": pct(r["chg"]), "brk": "突破 20 日高" if r["breakout"] else "",
-                     "sig": (f"{r['signal']}（{r['grade'][0]}）" if r["signal"] and r["grade"] else (r["signal"] or ""))}
+                     "sig": _sig(r)}
                     for _, r in va.iterrows()]
             pz_table(rows, [
                 {"key": "ticker", "label": "股票", "kind": "stock", "width": "minmax(130px,1.2fr)"},
