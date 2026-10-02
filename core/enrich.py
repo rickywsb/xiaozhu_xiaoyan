@@ -61,6 +61,8 @@ def enrich(tickers: list[str], ratings: pd.DataFrame, quotes: pd.DataFrame | Non
             lev = config.LEVERAGED_TICKERS.get(t)
             row.update({"score": None, "d5": None, "vr": None,
                         "action": "杠杆·不评分" if lev else "不评分", "volume_state": ""})
-        row["signals"] = sig.get(t, "")
+        from core import signal_lab
+        lab_txt = signal_lab.main_signal_text(t, max_n=2)
+        row["signals"] = lab_txt or sig.get(t, "")      # 全市场检验过的 O'Neil 买卖点优先
         rows.append(row)
     return pd.DataFrame(rows)

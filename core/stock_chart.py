@@ -228,7 +228,8 @@ def _chart_dialog(ticker: str, name: str | None = None) -> None:
             levels = [{"price": float(price), "color": color, "title": label}
                       for label, price, color in ctx["levels"] if lo - pad <= price <= hi + pad]
         # A / B 级信号箭头（近半年首次出现的位置）
-        hist_sig = _signal_history(ticker)
+        from core import signal_lab
+        hist_sig = signal_lab.ticker_recent(ticker) or _signal_history(ticker)   # 全市场检验的 A/B 信号优先
         dates = {pd.Timestamp(d).strftime("%Y-%m-%d") for d in ohlcv["Date"]}
         markers = [{"time": h["date"], "position": "belowBar" if h["expect"] > 0 else "aboveBar",
                     "color": "#1F7A45" if h["expect"] > 0 else "#B3362A",

@@ -258,6 +258,21 @@ def _rating_block() -> dict:
         return {}
 
 
+def _lab_block() -> dict:
+    """全市场检验 A/B 级买卖点（持仓）+ 大盘派发日状态。"""
+    try:
+        from core import signal_lab as SL
+        lab = SL.load_summary() or {}
+        names = {p["yf_ticker"].upper() for a in pf.get("accounts", []) for p in a.get("positions", [])}
+        hold = {t: [f"{x['signal']}（{x['grade']}·{'看多' if x['expect'] > 0 else '看空'}）" for x in SL.ticker_signals(t)]
+                for t in names}
+        return {"口径": "全市场约540只两年检验达到A/B级的O'Neil买卖点；只在首次触发当天出现",
+                "持仓今日信号": {t: v for t, v in hold.items() if v},
+                "大盘派发日": lab.get("market") or {}}
+    except Exception:
+        return {}
+
+
 def _news_block() -> list[dict]:
     out = []
     for theme in ("存储", "光通信", "半导体大盘"):
@@ -340,6 +355,7 @@ if run_full or run_skip:
         "期权": _options_block(cache),
         "板块轮动": _sector_block(),
         "市场状态与持仓评分": _rating_block(),
+        "今日买卖点": _lab_block(),
         "资讯": _news_block(),
     }
 

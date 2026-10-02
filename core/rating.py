@@ -42,14 +42,14 @@ VALIDATION_PATH = config.DATA_DIR / "rating_validation.json"
 # ─── 数据 ─────────────────────────────────────────────────────────────────────
 
 def load_panel(tickers: list[str], period: str = PERIOD, chunk: int = 100, progress=None) -> dict[str, pd.DataFrame]:
-    """{"close","high","low","volume","close_usd"}：日期 × 股票 矩阵（剔除盘中未收完的 K 线）。"""
+    """{"open","close","high","low","volume","close_usd"}：日期 × 股票 矩阵（剔除盘中未收完的 K 线）。"""
     data: dict[str, pd.DataFrame] = {}
     for i in range(0, len(tickers), chunk):
         if progress:
             progress(i, len(tickers))
         data.update(dm.fetch_ohlcv_histories(tickers[i:i + chunk], period=period, complete_bars_only=True))
     panel = {f.lower(): pd.DataFrame({t: d[f] for t, d in data.items() if f in d}).sort_index()
-             for f in ("Close", "High", "Low", "Volume")}
+             for f in ("Open", "Close", "High", "Low", "Volume")}
     fx = dm._fx_per_usd({config.CURRENCY_MAP[t] for t in data if t in config.CURRENCY_MAP}, period)
     panel["close_usd"] = pd.DataFrame({t: dm._to_usd(d["Close"], t, fx) for t, d in data.items()}).sort_index()
     # 只保留过半股票有数据的交易日：美股盘中时亚洲股票已收盘，否则最后一天只剩几只亚洲股票参与排名
@@ -434,6 +434,14 @@ def get_ratings(force: bool = False, progress=None) -> tuple[pd.DataFrame, str |
         from core.github_storage import sync_to_github
         path = save_latest(df, as_of)
         sync_to_github(path, "data/rating_latest.json", "chore: update ratings")
+    except Exception:
+        pass
+    try:   # 全市场买卖点信号：同一份矩阵，只多 1–2 秒
+        from core import signal_lab
+        from core.github_storage import sync_to_github
+        p1, p2 = signal_lab.save(signal_lab.run(b), config.market_today().isoformat())
+        sync_to_github(p1, "data/signal_lab.json", "chore: update signal lab")
+        sync_to_github(p2, "data/signal_lab_latest.json", "chore: update signal lab")
     except Exception:
         pass
     return df, as_of

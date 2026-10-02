@@ -159,6 +159,10 @@ def scan(universe: pd.DataFrame, chunk: int = 100) -> pd.DataFrame:
 # ─── 预设策略 ─────────────────────────────────────────────────────────────────
 
 PRESETS: dict[str, dict] = {
+    "🎯 今日 O'Neil 买点": {
+        "desc": "最近交易日触发全市场检验 A / B 级买点（放量创 52 周新高、财报跳空、首次回踩 50 日线、放量上涨等）",
+        "rule": lambda d: d["lab_buy"].fillna("").astype(str).str.len() > 0,
+    },
     "🏆 评分 ≥90": {
         "desc": "综合评分（全市场百分位）≥90 的强势股——历史检验唯一稳定跑赢的区间",
         "rule": lambda d: d["score"].fillna(0) >= 90,

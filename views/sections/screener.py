@@ -50,6 +50,10 @@ df = _scan(tuple(sorted(held)), tuple(sorted(watch)))
 from core import rating as _RT
 _rt, _ = _RT.load_latest()
 df = df.merge(_rt[["ticker", "score"]], on="ticker", how="left") if not _rt.empty else df.assign(score=None)
+from core import signal_lab as _SL
+_lt = _SL.load_latest().get("latest", {})
+_exp = {n: d for n, _, d, _ in _SL.SIGNALS}
+df["lab_buy"] = df["ticker"].map(lambda t: " · ".join(s for s in _lt.get(t, []) if _exp.get(s, 1) > 0))
 if df.empty:
     st.error("扫描失败（行情或成分股列表获取失败），请稍后重试。")
     st.stop()
@@ -94,7 +98,8 @@ tags = {t: ("持仓" if t in held else ("关注" if t in watch else "")) for t i
 rows = [{
     "ticker": r["ticker"], "name": r["name"],
     "sub": " · ".join(x for x in [r["name"] if str(r["name"]).upper() != r["ticker"] else "",
-                                  r["sector_name"] if isinstance(r["sector_name"], str) else "", tags[r["ticker"]]] if x),
+                                  r["sector_name"] if isinstance(r["sector_name"], str) else "", tags[r["ticker"]],
+                                  f"▲{r['lab_buy']}" if r.get("lab_buy") else ""] if x),
     "quadrant": r["quadrant"] if r["quadrant"] != "—" else "",
     "score": int(r["score"]) if pd.notna(r.get("score")) else None, "rs": r["rs"],
     "ret_20d": pct(r["ret_20d"]), "ret_63d": pct(r["ret_63d"]), "trend_6_1": pct(r["trend_6_1"]),

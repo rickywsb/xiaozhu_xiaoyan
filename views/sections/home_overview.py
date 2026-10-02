@@ -165,6 +165,14 @@ with c_ai:
         st.caption("今日日报尚未生成，到「日报」页一键生成。")
 
 # ─── 持仓评分（整行宽度）──────────────────────────────────────────────────────
+from core import signal_lab as _SL
+_lab = _SL.load_summary() or {}
+_mkt = _lab.get("market") or {}
+if _mkt.get("active"):
+    st.warning(f"⚠️ **大盘派发日偏多**：SPY 近 25 日出现 {_mkt.get('current_count')} 个派发日（放量下跌，≥5 个即警戒）。"
+               + (f"历史上警戒出现后 SPY 20 日平均 {_mkt['fwd_after'] * 100:+.1f}%，平常 {_mkt['fwd_all'] * 100:+.1f}%"
+                  f"（样本 {_mkt['n']} 次，仅供参考）。" if _mkt.get("fwd_after") is not None else "")
+               + "新开仓宜谨慎、优先看持仓的卖点信号。")
 st.markdown("#### 持仓评分")
 val = RT.load_validation() or {}
 tt = (val.get("top_tier") or {}).get(f"≥{RT.TOP_TIER}", {})

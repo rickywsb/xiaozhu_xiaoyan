@@ -13,7 +13,7 @@ import streamlit as st
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import config
 from core.stock_chart import click_hint
-from core.ui import frame_table
+from core.ui import frame_table, pz_table
 from core.daily_momentum import PERIODS, score_holdings, fetch_histories, DEFAULT_DECAY, DEFAULT_WINDOW
 try:
     from core.daily_momentum import score_holdings_ema, EMA_SPANS
@@ -307,6 +307,40 @@ with tab_overview:
                                   "分组": "持仓" if t in _holding_names else "关注", "倾向": lean,
                                   "可靠看多信号": "、".join(bull), "可靠看空信号": "、".join(bear),
                                   "反向提示": "、".join(rev) if show_noise else ""})
+
+        # ── 今日买卖点（全市场 540 只检验的 A/B 级，O'Neil 为主）──
+        from core import signal_lab as _SL
+        _labsum = _SL.load_summary()
+        st.markdown("#### 🎯 今日买卖点（全市场检验 A / B 级）")
+        if not _labsum:
+            st.caption("尚未生成全市场信号（首次打开驾驶舱计算评分时会自动生成）。")
+        else:
+            _ex = dict(zip(_labsum["summary"]["信号"], _labsum["summary"]["excess"]))
+            _rows = []
+            for t in list(_holding_names) + _watch:
+                sigs = _SL.ticker_signals(t)
+                if not sigs:
+                    continue
+                m = sigs[0]
+                _rows.append({"ticker": t, "name": _holding_names.get(t, t),
+                              "sub": "持仓" if t in _holding_names else "关注",
+                              "dir": "看多" if m["expect"] > 0 else "看空",
+                              "main": f"{'▲' if m['expect'] > 0 else '▼'} {m['signal']}（{m['grade']}）",
+                              "more": " · ".join(x["signal"] for x in sigs[1:]),
+                              "ex": (_ex.get(m["signal"]) or 0) * 100})
+            if not _rows:
+                st.success(f"✅ 持仓与关注今日（{_SL.load_latest().get('as_of')}）没有触发 A / B 级买卖点。")
+            else:
+                pz_table(_rows, [
+                    {"key": "ticker", "label": "股票", "kind": "stock", "width": "minmax(120px,1fr)"},
+                    {"key": "dir", "label": "方向", "kind": "pill", "width": "60px"},
+                    {"key": "main", "label": "主信号（评级）", "kind": "text", "width": "minmax(170px,1.5fr)"},
+                    {"key": "ex", "label": "历史 20 日超额", "kind": "num", "decimals": 1, "sign": True, "color": True,
+                     "suffix": "%", "width": "100px", "align": "right"},
+                    {"key": "more", "label": "同日其他信号", "kind": "small", "width": "minmax(140px,1.3fr)"},
+                ], key="lab_today", min_width=720)
+            st.caption("降噪规则：只列全市场约 540 只、两年检验达到 A / B 级的信号；每只股票只突出一个主信号；"
+                       "只在首次触发当天出现。完整表现见「📐 信号成绩单 → 全市场信号实验室」。")
 
         st.markdown("#### 🔔 当前触发的可靠信号")
         if not per_stock:
@@ -1666,6 +1700,42 @@ with tab_bt:
         st.plotly_chart(_fig, width="stretch")
         st.caption("结论：超额集中在最高分那一组，其余各组没有稳定的高低排序——所以评分定位为**强势筛选**（≥90），"
                    "90 分以下只作描述性排名；操作倾向方向正确但区分度弱，仅作状态提示。每周重跑，观察是否稳定。")
+    st.divider()
+
+    # ── 全市场信号实验室 ──
+    from core import signal_lab as _SL
+    st.subheader("🧪 全市场信号实验室（O'Neil 买卖点）")
+    _lab = _SL.load_summary()
+    if not _lab:
+        st.info("尚未生成：驾驶舱每个交易日首次计算全市场评分时自动生成。")
+    else:
+        _mk = _lab.get("market") or {}
+        st.caption(f"更新：{_lab['run_date']}（数据至 {_lab['as_of']}）｜ 约 540 只股票、两年日线；超额 = 触发后 20 日相对全市场平均；"
+                   "t 值按 20 日分块计算；回撤差 = 触发后 20 日最大回撤 − 全市场平均（卖点越负越好）；每日触发 = 全市场平均每天出现几次（噪音）。")
+        if _mk:
+            st.caption(f"大盘派发日：SPY 近 25 日 {_mk.get('current_count')} 个（≥5 警戒，当前{'⚠️ 警戒' if _mk.get('active') else '正常'}）；"
+                       + (f"历史上警戒后 SPY 20 日 {_mk['fwd_after'] * 100:+.1f}% vs 平常 {_mk['fwd_all'] * 100:+.1f}%（{_mk['n']} 次）" if _mk.get("fwd_after") is not None else ""))
+        _rows = [{"grade": r["grade"], "ticker": None, "ticker_label": r["信号"], "sub": r["分组"] + " · " + r["说明"],
+                  "dir": r["预期"], "n": r["n"], "per_day": r.get("per_day"), "ex": (r.get("excess") or 0) * 100,
+                  "t": r.get("t"), "h1": (r["h1"] * 100) if r.get("h1") == r.get("h1") and r.get("h1") is not None else None,
+                  "h2": (r["h2"] * 100) if r.get("h2") == r.get("h2") and r.get("h2") is not None else None,
+                  "hit": (r.get("hit") or 0) * 100, "dd": (r["dd_diff"] * 100) if r.get("dd_diff") is not None else None}
+                 for r in _lab["summary"].to_dict("records")]
+        _pc = lambda k, lab, w="70px": {"key": k, "label": lab, "kind": "num", "decimals": 2, "sign": True, "color": True,
+                                       "suffix": "%", "width": w, "align": "right", "sortable": True}
+        pz_table(_rows, [
+            {"key": "grade", "label": "评级", "kind": "pill", "width": "70px"},
+            {"key": "ticker_label", "label": "信号", "kind": "stock", "width": "minmax(180px,2fr)"},
+            {"key": "dir", "label": "方向", "kind": "pill", "width": "56px"},
+            {"key": "n", "label": "事件", "kind": "num", "decimals": 0, "width": "56px", "align": "right", "sortable": True},
+            {"key": "per_day", "label": "每日触发", "kind": "num", "decimals": 1, "width": "66px", "align": "right", "sortable": True},
+            _pc("ex", "20日超额"),
+            {"key": "t", "label": "t 值", "kind": "num", "decimals": 2, "sign": True, "width": "56px", "align": "right"},
+            _pc("h1", "前段", "64px"), _pc("h2", "后段", "64px"),
+            {"key": "hit", "label": "胜率", "kind": "num", "decimals": 0, "suffix": "%", "width": "52px", "align": "right"},
+            _pc("dd", "回撤差", "68px"),
+        ], key="lab_table", min_width=960)
+        st.caption("D 级（如高潮顶、平台突破）在这段行情里与预期相反——不会出现在任何提示里，只在此处作为反向参考。")
     st.divider()
 
     st.subheader("📐 信号成绩单")
