@@ -24,9 +24,8 @@ from core import signal_backtest as sbt
 from core import signal_lab as SL
 from core import tracker as tk
 from core import risk as RK
-from core import volume as VOL
 from core import option_flow as OF
-from core import daily_momentum as dm
+from core import intraday as INTRA
 from core.enrich import enrich
 from core.fx import get_fx_rates
 from core.price_updater import load_cache
@@ -45,34 +44,14 @@ def _ratings(day_key: str) -> tuple[pd.DataFrame, str | None, dict]:
     return df, as_of, dict(df.attrs)
 
 
-@st.cache_resource(show_spinner="🧮 准备全市场矩阵（盘中评分用，每个交易日首次约 1 分钟）…", ttl=86400, max_entries=2)
-def _base(close_day: str, held: tuple[str, ...], watch: tuple[str, ...]) -> dict:
-    return RT.build(set(held), set(watch))
-
-
-@st.cache_data(show_spinner="📡 正在按盘中 K 线重算全市场评分（约 20 秒）…", ttl=SCORE_REFRESH_MIN * 60 + 60, max_entries=4)
-def _intraday(bucket: str, close_day: str, held: tuple[str, ...], watch: tuple[str, ...],
-              names_json: str) -> tuple[pd.DataFrame | None, dict]:
-    """盘中预估评分表 + 盘中预计信号。bucket 每 10 分钟变一次（缓存键）。"""
-    now_et = datetime.now(ZoneInfo(config.MARKET_TZ))
-    frac = VOL.session_fraction(now_et)
-    if frac is None:
-        return None, {"note": f"开盘 {VOL.MIN_MINUTES} 分钟内成交量折算误差太大，暂用昨收评分"}
-    b = _base(close_day, held, watch)
-    bars = RT.today_bars(list(b["panel"]["close"].columns) + ["SPY"])
-    today = now_et.date().isoformat()
-    b2 = RT.intraday(b, bars, today, frac)
-    if b2 is None:
-        return None, {"note": "今天已收盘入库，显示收盘评分"}
-    tbl = RT.latest(b2, set(held), set(watch), json.loads(names_json))
-    spy = dm.fetch_ohlcv_histories(["SPY"], period="2y", complete_bars_only=True).get("SPY")
-    spy_c = spy["Close"] if spy is not None else pd.Series(dtype=float)
-    if bars.get("SPY", {}).get("date") == today:
-        spy_c = pd.concat([spy_c, pd.Series([bars["SPY"]["close"]], index=[pd.Timestamp(today)])])
-    sig = SL.intraday_signals(b2, spy_c)
-    n_today = sum(1 for t in b["panel"]["close"].columns if bars.get(t, {}).get("date") == today)
-    return tbl, {"time": now_et.strftime("%H:%M"), "frac": frac, "n_today": n_today, "signals": sig,
-                 "breadth50": tbl.attrs.get("breadth50")}
+def _intraday(close_day: str, held, watch, force: bool = False) -> tuple[pd.DataFrame | None, dict]:
+    """盘中预估评分（与板块雷达共用 core.intraday 的进程内缓存，每 10 分钟重算一次）。"""
+    with st.spinner("📡 正在按盘中 K 线重算全市场评分（每 10 分钟一次，约 10–30 秒）…"):
+        snap = INTRA.snapshot(close_day, set(held), set(watch), names, force=force)
+    if snap["tbl"] is None:
+        return None, {"note": snap["note"]}
+    return snap["tbl"], {"time": snap["time"], "frac": snap["frac"], "signals": snap["signals"],
+                         "breadth50": snap["breadth50"]}
 
 
 @st.cache_data(show_spinner=False, ttl=1800)
@@ -166,18 +145,15 @@ def cockpit():
     if c_b1.button("🔄 刷新报价", width="stretch", help="立即刷新报价与实时净值"):
         _quotes.clear()
         st.rerun(scope="fragment")
-    if c_b2.button("🧮 重算评分", width="stretch", disabled=not is_live,
-                   help=f"立即按盘中 K 线重算全市场评分（否则每 {SCORE_REFRESH_MIN} 分钟自动一次）"):
-        _intraday.clear()
-        st.rerun(scope="fragment")
+    force = c_b2.button("🧮 重算评分", width="stretch", disabled=not is_live,
+                        help=f"立即按盘中 K 线重算全市场评分（否则每 {SCORE_REFRESH_MIN} 分钟自动一次）")
 
     # ── 盘中评分（预估）──
     intr, imeta = None, {}
     if is_live:
-        bucket = f"{now_et:%Y-%m-%d %H}:{now_et.minute // SCORE_REFRESH_MIN}"
         close_day = tk.last_close_date() or ""
         try:
-            intr, imeta = _intraday(bucket, close_day, tuple(sorted(held_t)), tuple(sorted(watch)), json.dumps(names))
+            intr, imeta = _intraday(close_day, held_t, watch, force=force)
         except Exception as e:                      # 盘中重算失败不影响其余部分
             imeta = {"note": f"盘中评分暂不可用（{type(e).__name__}），显示昨收评分"}
     ratings = intr if intr is not None else ratings_close

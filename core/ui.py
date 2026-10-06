@@ -204,6 +204,7 @@ _LIST_CSS = """
 .pz-bar i { display: block; height: 6px; border-radius: 3px; background: #F0EEE8; flex-grow: 1; position: relative; min-width: 40px; }
 .pz-bar i b { position: absolute; left: 0; top: 0; height: 6px; border-radius: 3px; }
 .pz-empty { padding: 18px 8px; color: #8A877E; font-size: 13px; }
+.pz-sel { background: #FBEFD9 !important; box-shadow: inset 3px 0 0 #C7711F; }
 """
 
 _LIST_JS = """
@@ -286,7 +287,7 @@ export default function(component) {
     const head = `<div class="pz-row pz-head" style="grid-template-columns:${tmpl}">` + cols.map(c =>
       `<span class="${c.sortable ? 'sortable' : ''} ${c.key === key ? 'active' : ''} ${c.align === 'right' ? 'pz-r' : ''}" ${c.sortable ? `data-sort="${c.key}"` : ''}>${esc(c.label)}${arrow(c.key)}</span>`).join('') + '</div>';
     const body = sorted.map(r => {
-      const click = r.ticker ? 'pz-click' : '';
+      const click = (r.ticker ? 'pz-click' : '') + (r._sel ? ' pz-sel' : '');
       return `<div class="pz-row pz-body ${click}" style="grid-template-columns:${tmpl}" ${r.ticker ? `data-t="${esc(r.ticker)}" title="点击查看 ${esc(r.ticker)} 的个股详情"` : ''}>` +
         cols.map(c => `<div class="${c.align === 'right' ? 'pz-r' : ''}">${cell(r, c)}</div>`).join('') + '</div>';
     }).join('');
@@ -367,20 +368,25 @@ def _clean(v):
 
 
 def pz_table(rows: list[dict], columns: list[dict], key: str, sort: str | None = None, desc: bool = True,
-             min_width: int = 900, empty: str = "暂无数据", names: dict | None = None) -> None:
+             min_width: int = 900, empty: str = "暂无数据", names: dict | None = None,
+             select: bool = False, selected: str | None = None) -> str | None:
     """
     全站统一的设计稿样式表格（自定义 HTML）。
       rows     每行一个 dict；含 "ticker" 的行可点击 → 打开个股详情弹窗（ticker=None 不可点）
       columns  [{key, label, kind, width, sortable, align, ...}]，kind：
                stock（ticker + sub）/ price（key=价格文字, chg=涨跌% 键）/ num（decimals, sign, color, prefix, suffix, hot）
                / score（delta=5日变化键）/ spark / pill / bar（max, suffix, barColor）/ text（colors）/ small
+      select   True = 点击行只「选中」（返回被点的 ticker，不开个股弹窗）；selected = 当前选中行（高亮）
     """
     from core import stock_chart as SC
-    clean = [{k: _clean(v) for k, v in r.items()} for r in rows]
+    clean = [{k: _clean(v) for k, v in r.items()} | ({"_sel": True} if selected and r.get("ticker") == selected else {})
+             for r in rows]
     res = _list_comp()(data={"rows": clean, "columns": columns, "sort": sort or "", "desc": desc,
                              "minWidth": min_width, "empty": empty, "pills": PILLS},
                        key=key, on_clicked_change=lambda: None)
     clicked = getattr(res, "clicked", None)
+    if select:
+        return clicked
     names = names or {r.get("ticker"): r.get("name") for r in rows if r.get("ticker")}
     if clicked:
         st.session_state[SC._OPEN] = {"owner": key, "ticker": clicked, "name": names.get(clicked)}
